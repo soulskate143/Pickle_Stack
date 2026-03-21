@@ -646,11 +646,18 @@ export default function OpenPlayPage() {
               <button className="w-5 h-5 rounded-full border border-pb-border bg-white text-pb-text/40 hover:text-pb-green hover:border-pb-green text-xs font-bold flex items-center justify-center transition-colors">
                 i
               </button>
-              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 bg-zinc-800 text-white text-xs rounded-xl p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
-                <p className="font-semibold mb-1">FIFO</p>
-                <p className="text-white/70 mb-2">First In, First Out — players are assigned to courts in the exact order they joined the queue.</p>
-                <p className="font-semibold mb-1">Skill-Match</p>
-                <p className="text-white/70">Players are grouped by similar skill level so games are more competitive and balanced.</p>
+              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 bg-zinc-800 text-white text-xs rounded-xl p-3 opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                {session.stackingMode === 'fifo' ? (
+                  <>
+                    <p className="font-semibold mb-1">FIFO</p>
+                    <p className="text-white/70">First In, First Out — players are assigned to courts in the exact order they joined the queue.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold mb-1">Skill-Match</p>
+                    <p className="text-white/70">Players are grouped by similar skill level so games are more competitive and balanced.</p>
+                  </>
+                )}
               </div>
             </div>
           </div>

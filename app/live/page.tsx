@@ -559,6 +559,7 @@ export default function LivePage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [tick, setTick] = useState(0);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<'cameras' | 'scores'>('scores');
 
   useEffect(() => {
     setCameras(loadCameras());
@@ -604,7 +605,7 @@ export default function LivePage() {
             onClick={() => setConfigOpen(true)}
             className="text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-zinc-800 text-sm flex items-center gap-1.5"
           >
-            <span>⚙</span> Cameras
+            <span>⚙</span> <span className="hidden sm:inline">Cameras</span>
           </button>
           <button
             onClick={requestFullscreen}
@@ -622,11 +623,29 @@ export default function LivePage() {
         </div>
       </header>
 
-      {/* Main content */}
-      <div className="flex-1 flex gap-0 overflow-hidden min-h-0">
+      {/* Mobile tab switcher */}
+      <div className="flex sm:hidden border-b border-zinc-800 bg-zinc-900 shrink-0">
+        {(['scores', 'cameras'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMobileTab(tab)}
+            className={`flex-1 py-2 text-xs font-semibold capitalize transition-colors ${
+              mobileTab === tab
+                ? 'text-orange-400 border-b-2 border-orange-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {tab === 'cameras' ? '📷 Cameras' : '📊 Scores'}
+          </button>
+        ))}
+      </div>
 
-        {/* Camera area */}
-        <div className={`flex-1 min-w-0 p-3 ${camCount === 0 ? 'flex items-center justify-center' : ''}`}>
+      {/* Main content */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+
+        {/* Camera area — hidden on mobile when scores tab active */}
+        <div className={`min-w-0 p-3 ${camCount === 0 ? 'flex items-center justify-center' : ''}
+          ${mobileTab === 'cameras' ? 'flex flex-1' : 'hidden sm:flex sm:flex-1'}`}>
           {camCount === 0 ? (
             <div className="flex flex-col items-center gap-4 text-zinc-700">
               <span className="text-6xl">📷</span>
@@ -639,7 +658,6 @@ export default function LivePage() {
               </button>
             </div>
           ) : maximizedSlot ? (
-            /* Maximized single camera */
             <CameraPanel
               key={maximizedSlot.id}
               slot={maximizedSlot}
@@ -647,8 +665,7 @@ export default function LivePage() {
               isMaximized
             />
           ) : (
-            /* Grid view */
-            <div className={`grid ${cameraGridCols} gap-2 h-full`}>
+            <div className={`grid ${cameraGridCols} gap-2 w-full h-full`}>
               {cameras.map((slot) => (
                 <CameraPanel
                   key={slot.id}
@@ -660,8 +677,9 @@ export default function LivePage() {
           )}
         </div>
 
-        {/* Score sidebar */}
-        <aside className="w-72 shrink-0 border-l border-zinc-800 bg-zinc-900 p-4 flex flex-col min-h-0 overflow-hidden">
+        {/* Score sidebar — full width on mobile when scores tab active */}
+        <aside className={`shrink-0 border-zinc-800 bg-zinc-900 p-4 flex flex-col min-h-0 overflow-hidden
+          ${mobileTab === 'scores' ? 'flex w-full' : 'hidden sm:flex sm:w-72 sm:border-l'}`}>
           <ScoreBoard tick={tick} />
         </aside>
       </div>
