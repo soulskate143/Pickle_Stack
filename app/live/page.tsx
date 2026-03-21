@@ -644,8 +644,7 @@ export default function LivePage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* Camera area — hidden on mobile when scores tab active */}
-        <div className={`min-w-0 p-3 ${camCount === 0 ? 'flex items-center justify-center' : ''}
-          ${mobileTab === 'cameras' ? 'flex flex-1' : 'hidden sm:flex sm:flex-1'}`}>
+        <div className={`min-w-0 p-3 sm:flex sm:flex-1 ${mobileTab === 'cameras' ? 'flex flex-1' : 'hidden'} ${camCount === 0 ? 'items-center justify-center' : ''}`}>
           {camCount === 0 ? (
             <div className="flex flex-col items-center gap-4 text-zinc-700">
               <span className="text-6xl">📷</span>
@@ -678,8 +677,7 @@ export default function LivePage() {
         </div>
 
         {/* Score sidebar — full width on mobile when scores tab active */}
-        <aside className={`shrink-0 border-zinc-800 bg-zinc-900 p-4 flex flex-col min-h-0 overflow-hidden
-          ${mobileTab === 'scores' ? 'flex w-full' : 'hidden sm:flex sm:w-72 sm:border-l'}`}>
+        <aside className={`shrink-0 border-zinc-800 bg-zinc-900 p-4 flex-col min-h-0 overflow-hidden sm:flex sm:w-72 sm:border-l ${mobileTab === 'scores' ? 'flex w-full' : 'hidden'}`}>
           <ScoreBoard tick={tick} />
         </aside>
       </div>
