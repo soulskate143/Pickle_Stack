@@ -5,6 +5,7 @@ import type {
   TournamentTeam,
   RoundRobinStanding,
   MatchType,
+  WinCondition,
 } from './types';
 
 function uid(): string {
@@ -245,7 +246,9 @@ export function createEmptyTournament(
   location: string,
   date: string,
   format: Tournament['format'],
-  matchType: MatchType
+  matchType: MatchType,
+  maxScore: number = 11,
+  winCondition: WinCondition = 'win-by-2'
 ): Tournament {
   return {
     id: uid(),
@@ -258,6 +261,8 @@ export function createEmptyTournament(
     players: [],
     teams: [],
     matches: [],
+    maxScore,
+    winCondition,
   };
 }
 

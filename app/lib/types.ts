@@ -51,6 +51,7 @@ export interface OpenPlaySession {
 
 export type TournamentFormat = 'round-robin' | 'single-elimination';
 export type MatchType = 'singles' | 'doubles';
+export type WinCondition = 'sudden-death' | 'win-by-2';
 
 export interface TournamentPlayer {
   id: string;
@@ -74,6 +75,7 @@ export interface TournamentMatch {
   score2: number | null;
   winnerId: string | null;
   status: 'pending' | 'in-progress' | 'completed';
+  umpire?: string;
 }
 
 export interface RoundRobinStanding {
@@ -95,4 +97,6 @@ export interface Tournament {
   players: TournamentPlayer[];
   teams: TournamentTeam[];
   matches: TournamentMatch[];
+  maxScore: number;
+  winCondition: WinCondition;
 }

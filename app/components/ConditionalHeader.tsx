@@ -24,7 +24,7 @@ export default function ConditionalHeader() {
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
 
-  if (pathname.startsWith('/live') || pathname.startsWith('/kiosk')) return null;
+  if (pathname.startsWith('/live') || pathname.startsWith('/kiosk') || pathname.startsWith('/umpire')) return null;
 
   return (
     <>

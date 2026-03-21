@@ -25,11 +25,13 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t:
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [format, setFormat] = useState<TournamentFormat>('round-robin');
   const [matchType, setMatchType] = useState<MatchType>('doubles');
+  const [maxScore, setMaxScore] = useState(11);
+  const [winCondition, setWinCondition] = useState<'sudden-death' | 'win-by-2'>('win-by-2');
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(createEmptyTournament(name.trim(), location.trim(), date, format, matchType));
+    onCreate(createEmptyTournament(name.trim(), location.trim(), date, format, matchType, maxScore, winCondition));
     onClose();
   }
 
@@ -94,6 +96,31 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t:
               </select>
             </label>
           </div>
+
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Max score (play to)</span>
+            <select
+              value={maxScore}
+              onChange={(e) => setMaxScore(Number(e.target.value))}
+              className="border border-pb-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pb-green bg-white"
+            >
+              <option value={11}>11 points</option>
+              <option value={15}>15 points</option>
+              <option value={21}>21 points</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Win condition</span>
+            <select
+              value={winCondition}
+              onChange={(e) => setWinCondition(e.target.value as 'sudden-death' | 'win-by-2')}
+              className="border border-pb-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pb-green bg-white"
+            >
+              <option value="win-by-2">Win by 2</option>
+              <option value="sudden-death">Sudden Death</option>
+            </select>
+          </label>
 
           <div className="flex gap-2 mt-2">
             <button

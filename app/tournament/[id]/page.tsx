@@ -40,10 +40,12 @@ function BracketMatchCard({
   match,
   tournament,
   onScore,
+  tournamentId,
 }: {
   match: TournamentMatch;
   tournament: Tournament;
   onScore: (m: TournamentMatch) => void;
+  tournamentId: string;
 }) {
   const isBye = (match.entrant1Id === null) !== (match.entrant2Id === null);
   const isDone = match.status === 'completed';
@@ -86,7 +88,7 @@ function BracketMatchCard({
   return (
     <div
       onClick={() => canScore && onScore(match)}
-      className={`flex flex-col rounded overflow-hidden border ${
+      className={`relative flex flex-col rounded overflow-hidden border ${
         isDone ? 'border-zinc-600' : 'border-zinc-700'
       } ${canScore ? 'cursor-pointer hover:border-orange-500 transition-colors' : ''}`}
       style={{ height: MATCH_H, width: MATCH_W }}
@@ -121,6 +123,15 @@ function BracketMatchCard({
         </span>
         {scoreBox(match.score2, w2)}
       </div>
+      <a
+        href={`/umpire/${tournamentId}/${match.id}`}
+        target="_blank"
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-1 right-1.5 text-[10px] text-zinc-500 hover:text-orange-400 transition-colors"
+        title="Open umpire view"
+      >
+        🎤
+      </a>
     </div>
   );
 }
@@ -226,6 +237,7 @@ function BracketView({
                 match={match}
                 tournament={tournament}
                 onScore={setScoringMatch}
+                tournamentId={tournament.id}
               />
             </div>
           ))
@@ -257,6 +269,8 @@ function ScoreModal({
   onSave: (matchId: string, s1: number, s2: number) => void;
   onClose: () => void;
 }) {
+  const maxScore = tournament.maxScore ?? 11;
+  const winCondition = tournament.winCondition ?? 'win-by-2';
   const [s1, setS1] = useState(match.score1?.toString() ?? '');
   const [s2, setS2] = useState(match.score2?.toString() ?? '');
   const name1 = match.entrant1Id ? getEntrantName(tournament, match.entrant1Id) : 'BYE';
@@ -267,6 +281,12 @@ function ScoreModal({
     const n1 = parseInt(s1, 10);
     const n2 = parseInt(s2, 10);
     if (isNaN(n1) || isNaN(n2) || n1 < 0 || n2 < 0) return;
+    const winner = n1 > n2 ? n1 : n2;
+    const loser = n1 > n2 ? n2 : n1;
+    let valid = false;
+    if (winCondition === 'sudden-death') valid = winner >= maxScore;
+    else valid = winner >= maxScore && winner - loser >= 2;
+    if (!valid && !confirm(`Score doesn't match win condition (play to ${maxScore}${winCondition === 'win-by-2' ? ', win by 2' : ''}). Save anyway?`)) return;
     onSave(match.id, n1, n2);
     onClose();
   }
@@ -274,8 +294,13 @@ function ScoreModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <h2 className="text-base font-bold text-pb-green mb-4">Enter Score</h2>
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-bold text-pb-green">Enter Score</h2>
+          <span className="text-xs text-pb-text/40 bg-pb-bg px-2 py-0.5 rounded-full font-medium">
+            Play to {maxScore} · {winCondition === 'win-by-2' ? 'Win by 2' : 'Sudden Death'}
+          </span>
+        </div>
+        <form onSubmit={submit} className="flex flex-col gap-4 mt-4">
           <div className="flex items-center gap-3">
             <div className="flex-1 flex flex-col gap-1">
               <span className="text-xs font-medium text-pb-text/70 truncate">{name1}</span>
@@ -283,6 +308,7 @@ function ScoreModal({
                 autoFocus
                 type="number"
                 min={0}
+                max={maxScore}
                 value={s1}
                 onChange={(e) => setS1(e.target.value)}
                 className="border border-pb-border rounded-lg px-3 py-2 text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-pb-green"
@@ -294,6 +320,7 @@ function ScoreModal({
               <input
                 type="number"
                 min={0}
+                max={maxScore}
                 value={s2}
                 onChange={(e) => setS2(e.target.value)}
                 className="border border-pb-border rounded-lg px-3 py-2 text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-pb-green"
@@ -387,6 +414,7 @@ function RoundRobinView({
                     match={match}
                     tournament={tournament}
                     onScore={setScoringMatch}
+                    tournamentId={tournament.id}
                   />
                 ))}
               </div>
@@ -737,6 +765,42 @@ function SetupTab({
           })()}
         </div>
       )}
+
+      {/* Max score */}
+      <div className="md:col-span-2 border-t border-pb-border pt-6">
+        <label className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-pb-text">Max score (play to)</p>
+            <p className="text-xs text-pb-text/50 mt-0.5">Shown in score entry and enforced as the winning score.</p>
+          </div>
+          <select
+            value={tournament.maxScore ?? 11}
+            onChange={(e) => onChange({ ...tournament, maxScore: Number(e.target.value) })}
+            disabled={tournament.status !== 'setup'}
+            className="border border-pb-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pb-green disabled:opacity-50"
+          >
+            <option value={11}>11 points</option>
+            <option value={15}>15 points</option>
+            <option value={21}>21 points</option>
+          </select>
+        </label>
+        {/* Win condition */}
+        <div className="flex items-center justify-between gap-4 mt-3">
+          <div>
+            <p className="text-sm font-semibold text-pb-text">Win condition</p>
+            <p className="text-xs text-pb-text/50 mt-0.5">How the winner is determined at max score.</p>
+          </div>
+          <select
+            value={tournament.winCondition ?? 'win-by-2'}
+            onChange={(e) => onChange({ ...tournament, winCondition: e.target.value as 'sudden-death' | 'win-by-2' })}
+            disabled={tournament.status !== 'setup'}
+            className="border border-pb-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pb-green disabled:opacity-50"
+          >
+            <option value="win-by-2">Win by 2</option>
+            <option value="sudden-death">Sudden Death</option>
+          </select>
+        </div>
+      </div>
 
       {/* Generate */}
       <div className="md:col-span-2 border-t border-pb-border pt-6 flex items-center justify-between gap-4">

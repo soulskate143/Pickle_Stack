@@ -68,9 +68,11 @@ function PickleballCourt({
           Court {court.id}
         </span>
         {playing && (
-          <span className="text-xs font-mono bg-pb-green text-white px-2 py-0.5 rounded-full">
-            {elapsed(court.game!.startTime)}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-mono bg-pb-green text-white px-2 py-0.5 rounded-full">
+              {elapsed(court.game!.startTime)}
+            </span>
+          </div>
         )}
         {!playing && (
           <span className="text-xs text-pb-text/40 italic">Available</span>
