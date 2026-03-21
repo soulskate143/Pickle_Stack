@@ -127,10 +127,10 @@ function BracketMatchCard({
         href={`/umpire/${tournamentId}/${match.id}`}
         target="_blank"
         onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-1 right-1.5 text-[10px] text-zinc-500 hover:text-orange-400 transition-colors"
-        title="Open umpire view"
+        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors shadow-sm"
+        title="Open umpire scoring view"
       >
-        🎤
+        🎤 Umpire
       </a>
     </div>
   );
