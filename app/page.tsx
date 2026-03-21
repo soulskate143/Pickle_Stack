@@ -1,7 +1,102 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+// ─── Install banner ───────────────────────────────────────────────────────────
+
+function InstallBanner() {
+  const [deferredPrompt, setDeferredPrompt] = useState<Event & { prompt: () => void } | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [showIOSSteps, setShowIOSSteps] = useState(false);
+
+  useEffect(() => {
+    // Already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true);
+      return;
+    }
+    // Dismissed before
+    if (localStorage.getItem('pwa-banner-dismissed') === '1') {
+      setDismissed(true);
+      return;
+    }
+    // iOS detection
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window.navigator as unknown as { standalone?: boolean }).standalone;
+    setIsIOS(ios);
+
+    // Android/Chrome install prompt
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as Event & { prompt: () => void });
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  function dismiss() {
+    localStorage.setItem('pwa-banner-dismissed', '1');
+    setDismissed(true);
+  }
+
+  async function install() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    setDeferredPrompt(null);
+    setDismissed(true);
+  }
+
+  if (isInstalled || dismissed) return null;
+  if (!deferredPrompt && !isIOS) return null;
+
+  return (
+    <div className="w-full bg-pb-green/10 border border-pb-green/30 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📲</span>
+          <div>
+            <p className="font-bold text-pb-green text-sm">Install PickleStack on your device</p>
+            <p className="text-xs text-pb-text/60 mt-0.5">
+              Works offline — no internet needed after the first visit.
+            </p>
+          </div>
+        </div>
+        <button onClick={dismiss} className="text-pb-text/30 hover:text-pb-text text-xl leading-none shrink-0">×</button>
+      </div>
+
+      {/* Android/Chrome — one-tap install */}
+      {deferredPrompt && (
+        <button
+          onClick={install}
+          className="w-full bg-pb-green hover:bg-pb-green/80 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors"
+        >
+          + Add to Home Screen
+        </button>
+      )}
+
+      {/* iOS — manual steps */}
+      {isIOS && (
+        <div>
+          <button
+            onClick={() => setShowIOSSteps((v) => !v)}
+            className="w-full border border-pb-green/40 text-pb-green font-semibold py-2.5 rounded-xl text-sm transition-colors hover:bg-pb-green/10"
+          >
+            {showIOSSteps ? 'Hide steps ▲' : 'How to install on iPhone / iPad ▼'}
+          </button>
+          {showIOSSteps && (
+            <ol className="mt-3 flex flex-col gap-2 text-sm text-pb-text/70">
+              <li className="flex items-start gap-2"><span className="shrink-0 w-5 h-5 rounded-full bg-pb-green text-white text-xs font-bold flex items-center justify-center mt-0.5">1</span>Tap the <strong>Share</strong> button <span className="text-lg leading-none">⎙</span> at the bottom of Safari</li>
+              <li className="flex items-start gap-2"><span className="shrink-0 w-5 h-5 rounded-full bg-pb-green text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+              <li className="flex items-start gap-2"><span className="shrink-0 w-5 h-5 rounded-full bg-pb-green text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>Tap <strong>Add</strong> — PickleStack will appear on your home screen</li>
+            </ol>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Guide content ────────────────────────────────────────────────────────────
 
@@ -231,6 +326,8 @@ export default function HomePage() {
           master can actually play.
         </p>
       </div>
+
+      <InstallBanner />
 
       {/* Feature cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
