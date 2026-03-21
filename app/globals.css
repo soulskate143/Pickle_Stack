@@ -1,26 +1,30 @@
 @import "tailwindcss";
 
+/* ── Pickleball brand colours ─────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --pb-green: #2d6a4f;      /* court green */
+  --pb-green-light: #52b788;
+  --pb-yellow: #f9c22e;     /* ball yellow */
+  --pb-bg: #f4f7f5;
+  --pb-text: #1b2d25;
+  --pb-border: #c8ddd4;
+  --pb-card: #ffffff;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-pb-green: var(--pb-green);
+  --color-pb-green-light: var(--pb-green-light);
+  --color-pb-yellow: var(--pb-yellow);
+  --color-pb-bg: var(--pb-bg);
+  --color-pb-text: var(--pb-text);
+  --color-pb-border: var(--pb-border);
+  --color-pb-card: var(--pb-card);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  background: var(--pb-bg);
+  color: var(--pb-text);
 }
