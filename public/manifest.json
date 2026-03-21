@@ -1,0 +1,18 @@
+{
+  "name": "PickleStack",
+  "short_name": "PickleStack",
+  "description": "Pickleball court stacking & tournament management for Valencia Pickle Club",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#2d6a4f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/VPC_logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
