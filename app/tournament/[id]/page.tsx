@@ -17,7 +17,8 @@ import { SKILL_LABELS, SKILL_LEVELS } from '../../lib/types';
 // ─── Bracket layout constants ─────────────────────────────────────────────────
 
 const ENTRY_H = 32;        // height of one player row in bracket
-const MATCH_H = ENTRY_H * 2; // 64px total match box height
+const UMPIRE_H = 22;       // height of umpire link footer row
+const MATCH_H = ENTRY_H * 2 + UMPIRE_H; // 86px total match box height
 const MATCH_W = 190;       // match box width
 const R1_GAP = 8;          // gap between match boxes in round 1
 const UNIT = MATCH_H + R1_GAP; // 72px — base slot unit
@@ -123,15 +124,21 @@ function BracketMatchCard({
         </span>
         {scoreBox(match.score2, w2)}
       </div>
-      <a
-        href={`/umpire/${tournamentId}/${match.id}`}
-        target="_blank"
-        onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors shadow-sm"
-        title="Open umpire scoring view"
+      {/* Umpire footer row */}
+      <div
+        className="flex items-center justify-end px-2 bg-zinc-900 border-t border-zinc-700"
+        style={{ height: UMPIRE_H }}
       >
-        🎤 Umpire
-      </a>
+        <a
+          href={`/umpire/${tournamentId}/${match.id}`}
+          target="_blank"
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-1 bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors"
+          title="Open umpire scoring view"
+        >
+          🎤 Umpire
+        </a>
+      </div>
     </div>
   );
 }
@@ -147,7 +154,8 @@ function BracketView({
 }) {
   const [scoringMatch, setScoringMatch] = useState<TournamentMatch | null>(null);
 
-  const rounds = Array.from(new Set(tournament.matches.map((m) => m.round)))
+  const match3rd = tournament.matches.find((m) => m.is3rdPlace) ?? null;
+  const rounds = Array.from(new Set(tournament.matches.filter((m) => !m.is3rdPlace).map((m) => m.round)))
     .sort((a, b) => a - b);
 
   if (rounds.length === 0) {
@@ -155,7 +163,7 @@ function BracketView({
   }
 
   const matchesByRound = rounds.map((r) =>
-    tournament.matches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot)
+    tournament.matches.filter((m) => m.round === r && !m.is3rdPlace).sort((a, b) => a.slot - b.slot)
   );
 
   const r1Count = matchesByRound[0].length;
@@ -243,6 +251,21 @@ function BracketView({
           ))
         )}
       </div>
+
+      {/* 3rd place match */}
+      {match3rd && (
+        <div className="mt-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 mb-2">3rd Place Match</div>
+          <div className="inline-block">
+            <BracketMatchCard
+              match={match3rd}
+              tournament={tournament}
+              onScore={setScoringMatch}
+              tournamentId={tournament.id}
+            />
+          </div>
+        </div>
+      )}
 
       {scoringMatch && (
         <ScoreModal
@@ -932,14 +955,23 @@ export default function TournamentDetailPage({
               <span className="capitalize">{tournament.matchType}</span>
             </div>
           </div>
-          {allDone && tournament.status !== 'completed' && (
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => handleChange({ ...tournament, status: 'completed' })}
-              className="bg-pb-yellow hover:bg-pb-yellow/80 text-pb-text font-semibold text-sm px-4 py-2 rounded-lg transition-colors shrink-0"
+              onClick={() => window.print()}
+              className="border border-pb-border hover:border-pb-green text-pb-text/60 hover:text-pb-green font-medium text-sm px-3 py-2 rounded-lg transition-colors"
+              title="Print / Export PDF"
             >
-              ✓ Mark Complete
+              🖨 Print
             </button>
-          )}
+            {allDone && tournament.status !== 'completed' && (
+              <button
+                onClick={() => handleChange({ ...tournament, status: 'completed' })}
+                className="bg-pb-yellow hover:bg-pb-yellow/80 text-pb-text font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+              >
+                ✓ Mark Complete
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

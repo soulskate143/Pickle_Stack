@@ -222,26 +222,26 @@ export default function UmpirePage({
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-[#1b2d25] border border-white/20 rounded-2xl p-6 w-full max-w-xs">
             <h3 className="font-bold text-white mb-4">Edit Score</h3>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 flex flex-col gap-1">
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex flex-col gap-1">
                 <span className="text-xs text-white/50 truncate">{name1}</span>
                 <input
                   type="number"
                   min={0}
                   value={editS1}
                   onChange={(e) => setEditS1(Number(e.target.value))}
-                  className="bg-white/10 text-white text-center text-2xl font-bold rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  className="w-full bg-white/10 text-white text-center text-2xl font-bold rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-orange-400"
                 />
               </div>
-              <span className="text-white/30 font-bold">–</span>
-              <div className="flex-1 flex flex-col gap-1">
+              <div className="text-center text-white/30 font-bold text-lg leading-none">–</div>
+              <div className="flex flex-col gap-1">
                 <span className="text-xs text-white/50 truncate">{name2}</span>
                 <input
                   type="number"
                   min={0}
                   value={editS2}
                   onChange={(e) => setEditS2(Number(e.target.value))}
-                  className="bg-white/10 text-white text-center text-2xl font-bold rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                  className="w-full bg-white/10 text-white text-center text-2xl font-bold rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-cyan-400"
                 />
               </div>
             </div>

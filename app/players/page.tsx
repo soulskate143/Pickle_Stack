@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { deletePlayer, loadPlayers, upsertPlayer } from '../lib/storage';
-import type { PlayerProfile, SkillLevel } from '../lib/types';
+import { deletePlayer, loadPlayers, loadTournaments, upsertPlayer } from '../lib/storage';
+import type { PlayerProfile, SkillLevel, Tournament } from '../lib/types';
 import { SKILL_LABELS, SKILL_LEVELS } from '../lib/types';
 
 const PAGE_SIZE = 10;
@@ -99,16 +99,128 @@ function EditSkillInline({
   );
 }
 
+// ─── Player stats helpers ─────────────────────────────────────────────────────
+
+interface PlayerStat {
+  name: string;
+  wins: number;
+  losses: number;
+  tournamentsPlayed: number;
+  pointsFor: number;
+  pointsAgainst: number;
+}
+
+function computePlayerStats(tournaments: Tournament[]): Record<string, PlayerStat> {
+  const stats: Record<string, PlayerStat> = {};
+
+  function getOrCreate(name: string): PlayerStat {
+    if (!stats[name]) stats[name] = { name, wins: 0, losses: 0, tournamentsPlayed: 0, pointsFor: 0, pointsAgainst: 0 };
+    return stats[name];
+  }
+
+  for (const t of tournaments) {
+    // Gather all entrant names that played
+    const entrantNames: Record<string, string[]> = {}; // entrantId -> player names
+    if (t.matchType === 'singles') {
+      for (const p of t.players) entrantNames[p.id] = [p.name];
+    } else {
+      for (const team of t.teams) {
+        entrantNames[team.id] = team.playerIds.map((pid) => t.players.find((p) => p.id === pid)?.name ?? '').filter(Boolean);
+      }
+    }
+
+    const participated = new Set<string>();
+
+    for (const m of t.matches) {
+      if (m.status !== 'completed' || !m.entrant1Id || !m.entrant2Id || m.is3rdPlace) continue;
+      const names1 = entrantNames[m.entrant1Id] ?? [];
+      const names2 = entrantNames[m.entrant2Id] ?? [];
+      const isE1Win = m.winnerId === m.entrant1Id;
+
+      for (const n of names1) {
+        participated.add(n);
+        const s = getOrCreate(n);
+        if (isE1Win) s.wins++; else s.losses++;
+        s.pointsFor += m.score1 ?? 0;
+        s.pointsAgainst += m.score2 ?? 0;
+      }
+      for (const n of names2) {
+        participated.add(n);
+        const s = getOrCreate(n);
+        if (!isE1Win) s.wins++; else s.losses++;
+        s.pointsFor += m.score2 ?? 0;
+        s.pointsAgainst += m.score1 ?? 0;
+      }
+    }
+
+    for (const name of participated) getOrCreate(name).tournamentsPlayed++;
+  }
+  return stats;
+}
+
+// ─── Head-to-head helpers ─────────────────────────────────────────────────────
+
+interface H2HMatch {
+  tournamentName: string;
+  score: string;
+  winner: string;
+}
+
+function getH2H(tournaments: Tournament[], nameA: string, nameB: string): H2HMatch[] {
+  const results: H2HMatch[] = [];
+  const na = nameA.toLowerCase();
+  const nb = nameB.toLowerCase();
+
+  for (const t of tournaments) {
+    const entrantNames: Record<string, string[]> = {};
+    if (t.matchType === 'singles') {
+      for (const p of t.players) entrantNames[p.id] = [p.name];
+    } else {
+      for (const team of t.teams) {
+        entrantNames[team.id] = team.playerIds.map((pid) => t.players.find((p) => p.id === pid)?.name ?? '').filter(Boolean);
+      }
+    }
+
+    for (const m of t.matches) {
+      if (m.status !== 'completed' || !m.entrant1Id || !m.entrant2Id) continue;
+      const names1 = (entrantNames[m.entrant1Id] ?? []).map((n) => n.toLowerCase());
+      const names2 = (entrantNames[m.entrant2Id] ?? []).map((n) => n.toLowerCase());
+      const hasA1 = names1.some((n) => n === na), hasA2 = names2.some((n) => n === na);
+      const hasB1 = names1.some((n) => n === nb), hasB2 = names2.some((n) => n === nb);
+      if ((hasA1 && hasB2) || (hasA2 && hasB1)) {
+        const winnerNames = m.winnerId ? (entrantNames[m.winnerId] ?? []).join(' / ') : '—';
+        results.push({
+          tournamentName: t.name,
+          score: `${m.score1 ?? '?'} – ${m.score2 ?? '?'}`,
+          winner: winnerNames,
+        });
+      }
+    }
+  }
+  return results;
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+type PageView = 'roster' | 'stats' | 'h2h';
+
 export default function PlayersPage() {
   const [players, setPlayers] = useState<PlayerProfile[] | null>(null);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [view, setView] = useState<PageView>('roster');
   const [search, setSearch] = useState('');
   const [skillFilter, setSkillFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [h2hA, setH2hA] = useState('');
+  const [h2hB, setH2hB] = useState('');
 
-  useEffect(() => { setPlayers(loadPlayers()); }, []);
+  useEffect(() => {
+    setPlayers(loadPlayers());
+    setTournaments(loadTournaments());
+  }, []);
 
   if (players === null) return <div className="p-8 text-center text-pb-text/40">Loading…</div>;
 
@@ -176,11 +288,13 @@ export default function PlayersPage() {
     return <span className="text-pb-green ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
   }
 
+  const playerStats = computePlayerStats(tournaments);
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
 
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-pb-green">Player Profiles</h1>
           <p className="text-sm text-pb-text/60 mt-0.5">
@@ -188,6 +302,132 @@ export default function PlayersPage() {
           </p>
         </div>
       </div>
+
+      {/* View tabs */}
+      <div className="flex border-b border-pb-border mb-6">
+        {([['roster', 'Roster'], ['stats', 'Stats'], ['h2h', 'Head-to-Head']] as [PageView, string][]).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              view === v ? 'border-pb-green text-pb-green' : 'border-transparent text-pb-text/50 hover:text-pb-text'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats view */}
+      {view === 'stats' && (
+        <div>
+          {Object.keys(playerStats).length === 0 ? (
+            <p className="text-sm text-pb-text/40 py-8 text-center">No tournament match data yet. Complete some matches to see stats.</p>
+          ) : (
+            <div className="bg-pb-card border border-pb-border rounded-xl overflow-hidden">
+              <div className="grid grid-cols-[1fr_5rem_5rem_5rem_6rem] gap-x-4 px-4 py-2.5 bg-pb-bg border-b border-pb-border text-xs font-bold uppercase tracking-wide text-pb-text/40">
+                <span>Player</span>
+                <span className="text-center">W</span>
+                <span className="text-center">L</span>
+                <span className="text-center">Win %</span>
+                <span className="text-center">Tournaments</span>
+              </div>
+              <div className="divide-y divide-pb-border">
+                {Object.values(playerStats)
+                  .sort((a, b) => (b.wins / Math.max(b.wins + b.losses, 1)) - (a.wins / Math.max(a.wins + a.losses, 1)))
+                  .map((s) => {
+                    const total = s.wins + s.losses;
+                    const pct = total > 0 ? Math.round((s.wins / total) * 100) : 0;
+                    return (
+                      <div key={s.name} className="grid grid-cols-[1fr_5rem_5rem_5rem_6rem] gap-x-4 px-4 py-3 items-center hover:bg-pb-bg/50 transition-colors">
+                        <div className="font-semibold text-sm truncate">{s.name}</div>
+                        <div className="text-center text-sm font-bold text-pb-green">{s.wins}</div>
+                        <div className="text-center text-sm text-pb-text/50">{s.losses}</div>
+                        <div className="text-center text-sm font-semibold">{pct}%</div>
+                        <div className="text-center text-sm text-pb-text/50">{s.tournamentsPlayed}</div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Head-to-head view */}
+      {view === 'h2h' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-2 items-end">
+            <label className="flex-1 flex flex-col gap-1 text-sm">
+              <span className="font-medium text-pb-text/70">Player A</span>
+              <input
+                list="h2h-players"
+                value={h2hA}
+                onChange={(e) => setH2hA(e.target.value)}
+                placeholder="Type a player name…"
+                className="border border-pb-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pb-green"
+              />
+            </label>
+            <span className="text-pb-text/40 font-bold text-lg pb-2">vs</span>
+            <label className="flex-1 flex flex-col gap-1 text-sm">
+              <span className="font-medium text-pb-text/70">Player B</span>
+              <input
+                list="h2h-players"
+                value={h2hB}
+                onChange={(e) => setH2hB(e.target.value)}
+                placeholder="Type a player name…"
+                className="border border-pb-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pb-green"
+              />
+            </label>
+            <datalist id="h2h-players">
+              {players.map((p) => <option key={p.id} value={p.name} />)}
+            </datalist>
+          </div>
+
+          {h2hA && h2hB && h2hA !== h2hB && (() => {
+            const matches = getH2H(tournaments, h2hA, h2hB);
+            const aWins = matches.filter((m) => m.winner.toLowerCase().includes(h2hA.toLowerCase())).length;
+            const bWins = matches.filter((m) => m.winner.toLowerCase().includes(h2hB.toLowerCase())).length;
+            return (
+              <div>
+                <div className="flex items-center justify-center gap-6 py-4 bg-pb-green/5 rounded-xl border border-pb-green/20 mb-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-pb-green">{aWins}</div>
+                    <div className="text-xs text-pb-text/60 font-medium truncate max-w-[100px]">{h2hA}</div>
+                  </div>
+                  <div className="text-pb-text/30 font-bold">—</div>
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-pb-green">{bWins}</div>
+                    <div className="text-xs text-pb-text/60 font-medium truncate max-w-[100px]">{h2hB}</div>
+                  </div>
+                </div>
+                {matches.length === 0 ? (
+                  <p className="text-sm text-pb-text/40 text-center py-4">No completed matches found between these players.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {matches.map((m, i) => (
+                      <div key={i} className="border border-pb-border rounded-xl px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-pb-text">{m.score}</span>
+                          <span className="text-xs text-pb-green font-medium">🏆 {m.winner}</span>
+                        </div>
+                        <p className="text-xs text-pb-text/40 mt-0.5">{m.tournamentName}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {h2hA && h2hB && h2hA === h2hB && (
+            <p className="text-sm text-pb-text/40 text-center">Select two different players.</p>
+          )}
+        </div>
+      )}
+
+      {/* Roster view */}
+      {view === 'roster' && <>
 
       {/* Skill distribution */}
       {players.length > 0 && (
@@ -381,6 +621,7 @@ export default function PlayersPage() {
           </div>
         </>
       )}
+      </>}
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git remote:*)",
+      "Bash(grep -n \"umpire\\\\|Umpire\" c:/Projects/pickleball/app/tournament/[id]/page.tsx)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npx next:*)",
+      "Bash(grep -n \"BracketView\\\\|is3rdPlace\\\\|3rd\\\\|print\\\\|Print\\\\|export\\\\|Export\" c:/Projects/pickleball/app/tournament/[id]/page.tsx)",
+      "Bash(npm install:*)",
+      "Bash(grep -n \"MATCH_H\\\\|ENTRY_H\\\\|MATCH_W\\\\|ROUND_W\\\\|CON_W\" c:/Projects/pickleball/app/tournament/[id]/page.tsx)"
+    ]
+  }
+}

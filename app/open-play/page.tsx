@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadOpenPlay, loadPlayers, saveOpenPlay } from '../lib/storage';
+import QRCode from 'react-qr-code';
+import { appendSessionLog, loadOpenPlay, loadPlayers, saveOpenPlay } from '../lib/storage';
 import { autoAssign, endGame, setCourtCount } from '../lib/stacking';
-import type { OpenPlaySession, PlayerProfile, QueuedPlayer, SkillLevel, StackingMode } from '../lib/types';
+import type { OpenPlaySession, PlayerProfile, QueuedPlayer, SessionLog, SkillLevel, StackingMode } from '../lib/types';
 import { SKILL_LABELS, SKILL_LEVELS } from '../lib/types';
 
 function uid() {
@@ -17,13 +18,18 @@ function elapsed(startTime: number): string {
   return `${m}:${s}`;
 }
 
+function formatMs(ms: number): string {
+  const m = Math.round(ms / 60000);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 // ─── Pickleball court SVG ─────────────────────────────────────────────────────
 
 const FOUR_PLAYER_POSITIONS = [
-  { x: 65, y: 38 },   // Team A, top
-  { x: 65, y: 122 },  // Team A, bottom
-  { x: 235, y: 38 },  // Team B, top
-  { x: 235, y: 122 }, // Team B, bottom
+  { x: 65, y: 38 },
+  { x: 65, y: 122 },
+  { x: 235, y: 38 },
+  { x: 235, y: 122 },
 ];
 
 const TWO_PLAYER_POSITIONS = [
@@ -41,26 +47,46 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+const ALERT_MINS = 20; // show warning after this many minutes
+
 function PickleballCourt({
   court,
   onEndGame,
+  onDropPlayer,
   tick,
 }: {
   court: OpenPlaySession['courts'][number];
   onEndGame: (courtId: number, requeue: boolean) => void;
+  onDropPlayer: (courtId: number, playerId: string) => void;
   tick: number;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   const playing = court.game !== null;
   const players = court.game?.players ?? [];
   const positions = getPlayerPositions(players.length);
 
+  const gameMs = playing ? Date.now() - court.game!.startTime : 0;
+  const isOvertime = playing && gameMs > ALERT_MINS * 60000;
+
   return (
     <div
       className={`rounded-xl border-2 overflow-hidden transition-all ${
-        playing
-          ? 'border-pb-green shadow-md shadow-pb-green/10'
-          : 'border-pb-border opacity-70'
+        dragOver
+          ? 'border-pb-yellow bg-pb-yellow/5 scale-[1.01]'
+          : playing
+          ? isOvertime
+            ? 'border-orange-400 shadow-md shadow-orange-400/20'
+            : 'border-pb-green shadow-md shadow-pb-green/10'
+          : 'border-pb-border border-dashed opacity-70'
       }`}
+      onDragOver={(e) => { if (!playing) { e.preventDefault(); setDragOver(true); }}}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const id = e.dataTransfer.getData('playerId');
+        if (id && !playing) onDropPlayer(court.id, id);
+      }}
     >
       {/* Court header */}
       <div className="flex items-center justify-between px-3 py-2 bg-pb-card border-b border-pb-border">
@@ -69,73 +95,49 @@ function PickleballCourt({
         </span>
         {playing && (
           <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono bg-pb-green text-white px-2 py-0.5 rounded-full">
+            {isOvertime && (
+              <span className="text-[10px] font-bold text-orange-500 animate-pulse uppercase tracking-wide">
+                ⏱ Long game
+              </span>
+            )}
+            <span className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+              isOvertime ? 'bg-orange-500 text-white' : 'bg-pb-green text-white'
+            }`}>
               {elapsed(court.game!.startTime)}
             </span>
           </div>
         )}
         {!playing && (
-          <span className="text-xs text-pb-text/40 italic">Available</span>
+          <span className="text-xs text-pb-text/40 italic">
+            {dragOver ? 'Drop to assign' : 'Available'}
+          </span>
         )}
       </div>
 
       {/* SVG court */}
       <svg viewBox="0 0 300 160" className="w-full" style={{ display: 'block' }}>
-        {/* Court background */}
         <rect x={10} y={8} width={280} height={144} fill="#1e3a5f" rx={3} />
-
-        {/* Kitchen/NVZ areas */}
         <rect x={10} y={8} width={96} height={144} fill="#163a2a" />
         <rect x={194} y={8} width={96} height={144} fill="#163a2a" />
-
-        {/* Net shadow rect */}
         <rect x={148} y={8} width={4} height={144} fill="rgba(255,255,255,0.15)" />
-
-        {/* White boundary lines */}
         <rect x={10} y={8} width={280} height={144} fill="none" stroke="white" strokeWidth={1.5} />
-
-        {/* NVZ lines */}
         <line x1={106} y1={8} x2={106} y2={152} stroke="white" strokeWidth={1} />
         <line x1={194} y1={8} x2={194} y2={152} stroke="white" strokeWidth={1} />
-
-        {/* Center service lines */}
         <line x1={10} y1={80} x2={106} y2={80} stroke="white" strokeWidth={1} />
         <line x1={194} y1={80} x2={290} y2={80} stroke="white" strokeWidth={1} />
-
-        {/* Net */}
         <line x1={150} y1={8} x2={150} y2={152} stroke="white" strokeWidth={2.5} />
 
-        {/* Available text when empty */}
         {!playing && (
           <>
-            <text
-              x={80}
-              y={80}
-              fontSize={10}
-              fill="rgba(255,255,255,0.3)"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontWeight="bold"
-              letterSpacing={2}
-            >
-              AVAILABLE
+            <text x={80} y={80} fontSize={10} fill="rgba(255,255,255,0.3)" textAnchor="middle" dominantBaseline="middle" fontWeight="bold" letterSpacing={2}>
+              {dragOver ? 'ASSIGN' : 'AVAILABLE'}
             </text>
-            <text
-              x={220}
-              y={80}
-              fontSize={10}
-              fill="rgba(255,255,255,0.3)"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontWeight="bold"
-              letterSpacing={2}
-            >
-              AVAILABLE
+            <text x={220} y={80} fontSize={10} fill="rgba(255,255,255,0.3)" textAnchor="middle" dominantBaseline="middle" fontWeight="bold" letterSpacing={2}>
+              {dragOver ? 'HERE' : 'AVAILABLE'}
             </text>
           </>
         )}
 
-        {/* Players */}
         {playing &&
           players.map((p, i) => {
             const pos = positions[i];
@@ -145,24 +147,10 @@ function PickleballCourt({
             return (
               <g key={p.id}>
                 <circle cx={pos.x} cy={pos.y} r={14} fill={fill} />
-                <text
-                  x={pos.x}
-                  y={pos.y}
-                  fontSize={11}
-                  fontWeight="bold"
-                  fill="white"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                >
+                <text x={pos.x} y={pos.y} fontSize={11} fontWeight="bold" fill="white" textAnchor="middle" dominantBaseline="middle">
                   {p.name.charAt(0).toUpperCase()}
                 </text>
-                <text
-                  x={pos.x}
-                  y={pos.y + 24}
-                  fontSize={8}
-                  fill="white"
-                  textAnchor="middle"
-                >
+                <text x={pos.x} y={pos.y + 24} fontSize={8} fill="white" textAnchor="middle">
                   {truncate(p.name, 10)}
                 </text>
               </g>
@@ -170,7 +158,6 @@ function PickleballCourt({
           })}
       </svg>
 
-      {/* Team labels below court */}
       {playing && (
         <div className="flex justify-between px-3 py-1.5 bg-pb-card/80 text-xs border-t border-pb-border">
           <div className="flex items-center gap-1">
@@ -184,7 +171,6 @@ function PickleballCourt({
         </div>
       )}
 
-      {/* Action buttons */}
       {playing && (
         <div className="flex gap-2 px-3 py-2 bg-pb-card border-t border-pb-border">
           <button
@@ -221,7 +207,6 @@ function OnDeckPanel({
   const pair1 = queue.slice(0, 4);
   const pair2 = queue.slice(4, 8);
   const replacingPlayer = queue.find((p) => p.id === replacingId) ?? null;
-  // All other queued players available as replacements (not just bench)
   const replacementOptions = queue.filter((p) => p.id !== replacingId);
 
   function handleReplace(withId: string | 'auto') {
@@ -230,24 +215,14 @@ function OnDeckPanel({
     setReplacingId(null);
   }
 
-  function PlayerPill({
-    player,
-    index,
-    bgClass,
-    textClass,
-  }: {
-    player: QueuedPlayer;
-    index: number;
-    bgClass: string;
-    textClass: string;
+  function PlayerPill({ player, index, bgClass, textClass }: {
+    player: QueuedPlayer; index: number; bgClass: string; textClass: string;
   }) {
     const isReplacing = replacingId === player.id;
     return (
       <span
         className={`group flex items-center gap-1 text-xs font-semibold pl-2.5 pr-1.5 py-1 rounded-full transition-all ${
-          isReplacing
-            ? 'bg-red-500 text-white ring-2 ring-red-300'
-            : `${bgClass} ${textClass}`
+          isReplacing ? 'bg-red-500 text-white ring-2 ring-red-300' : `${bgClass} ${textClass}`
         }`}
       >
         <span className="opacity-60">{index}</span>
@@ -266,20 +241,15 @@ function OnDeckPanel({
   return (
     <div className="rounded-xl border-2 border-pb-green bg-pb-green/5 p-4 mb-6">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm font-bold uppercase tracking-widest text-pb-green">
-          🎯 On Deck
-        </span>
+        <span className="text-sm font-bold uppercase tracking-widest text-pb-green">🎯 On Deck</span>
         <span className="text-xs text-pb-text/50">— hover a name to replace</span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Pair 1 — up next */}
         <div className="rounded-lg bg-pb-green/10 border border-pb-green/30 p-3">
           <div className="flex items-center gap-1.5 mb-2">
             <span className="w-2 h-2 rounded-full bg-pb-green animate-pulse" />
-            <span className="text-xs font-bold text-pb-green uppercase tracking-wide">
-              Pair 1 — Up Next
-            </span>
+            <span className="text-xs font-bold text-pb-green uppercase tracking-wide">Pair 1 — Up Next</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {pair1.map((p, i) => (
@@ -288,14 +258,11 @@ function OnDeckPanel({
           </div>
         </div>
 
-        {/* Pair 2 — prepare */}
         {pair2.length > 0 && (
           <div className="rounded-lg bg-pb-yellow/10 border border-pb-yellow/40 p-3">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="w-2 h-2 rounded-full bg-pb-yellow" />
-              <span className="text-xs font-bold text-pb-text/70 uppercase tracking-wide">
-                Pair 2 — Prepare
-              </span>
+              <span className="text-xs font-bold text-pb-text/70 uppercase tracking-wide">Pair 2 — Prepare</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {pair2.map((p, i) => (
@@ -306,14 +273,12 @@ function OnDeckPanel({
         )}
       </div>
 
-      {/* Replacement picker */}
       {replacingId && replacingPlayer && (
         <div className="mt-3 pt-3 border-t border-pb-green/20">
           <p className="text-xs font-semibold text-pb-text/70 mb-2">
             Replace <span className="text-red-500">{replacingPlayer.name}</span> with:
           </p>
           <div className="flex flex-wrap gap-2">
-            {/* Auto option */}
             <button
               onClick={() => handleReplace('auto')}
               className="flex items-center gap-1.5 bg-pb-green text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-pb-green/80 transition-colors"
@@ -321,8 +286,6 @@ function OnDeckPanel({
               ⚡ Auto — next in line
               {replacementOptions[0] && <span className="opacity-70">({replacementOptions[0].name})</span>}
             </button>
-
-            {/* Pick any other queued player */}
             {replacementOptions.map((p, i) => (
               <button
                 key={p.id}
@@ -334,7 +297,6 @@ function OnDeckPanel({
                 <span className="text-pb-text/40 ml-0.5">{p.skillLevel}</span>
               </button>
             ))}
-
             {replacementOptions.length === 0 && (
               <button
                 onClick={() => handleReplace('auto')}
@@ -343,7 +305,6 @@ function OnDeckPanel({
                 Skip to end of queue
               </button>
             )}
-
             <button
               onClick={() => setReplacingId(null)}
               className="text-xs text-pb-text/40 hover:text-pb-text px-2 py-1.5 transition-colors"
@@ -359,7 +320,8 @@ function OnDeckPanel({
 
 // ─── Queue list ───────────────────────────────────────────────────────────────
 
-function formatWait(mins: number): string {
+function formatWait(ms: number): string {
+  const mins = Math.round(ms / 60000);
   if (mins < 60) return `~${mins}m`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -371,11 +333,13 @@ function QueueList({
   onRemove,
   activeCourts,
   courtCount,
+  avgGameMs,
 }: {
   queue: QueuedPlayer[];
   onRemove: (id: string) => void;
   activeCourts: number;
   courtCount: number;
+  avgGameMs: number;
 }) {
   if (queue.length === 0) {
     return (
@@ -385,20 +349,25 @@ function QueueList({
     );
   }
 
-  const effectiveCourts = activeCourts > 0 ? activeCourts : courtCount;
+  const effectiveCourts = Math.max(activeCourts > 0 ? activeCourts : courtCount, 1);
+  const perCourt = 4; // players per game
 
   return (
     <ol className="space-y-2">
       {queue.map((p, i) => {
-        const mins = Math.ceil((i + 1) / Math.max(effectiveCourts * 4, 1)) * 15;
+        // Estimated wait: ceil position in groups of (courts * 4), times avg game
+        const gamesAway = Math.ceil((i + 1) / (effectiveCourts * perCourt));
+        const waitMs = gamesAway * avgGameMs;
         return (
           <li
             key={p.id}
-            className="flex items-center gap-3 bg-pb-card border border-pb-border rounded-lg px-3 py-2"
+            draggable
+            onDragStart={(e) => e.dataTransfer.setData('playerId', p.id)}
+            className="flex items-center gap-3 bg-pb-card border border-pb-border rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing hover:border-pb-green/40 transition-colors"
           >
             <div className="flex flex-col items-center w-8 shrink-0">
               <span className="text-xs font-mono text-pb-text/40 leading-none">{i + 1}</span>
-              <span className="text-xs text-pb-text/30 leading-none mt-0.5">{formatWait(mins)}</span>
+              <span className="text-xs text-pb-text/30 leading-none mt-0.5">{formatWait(waitMs)}</span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-sm truncate">{p.name}</div>
@@ -436,9 +405,7 @@ function AddPlayerForm({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (rosterOpen) {
-      setRosterPlayers(loadPlayers());
-    }
+    if (rosterOpen) setRosterPlayers(loadPlayers());
   }, [rosterOpen]);
 
   function submit(e: React.FormEvent) {
@@ -450,7 +417,6 @@ function AddPlayerForm({
     inputRef.current?.focus();
   }
 
-  // Check if a roster player is already in queue or on court
   function isPlayerBusy(rp: PlayerProfile): boolean {
     if (queue.some((q) => q.name === rp.name)) return true;
     for (const court of session.courts) {
@@ -475,9 +441,7 @@ function AddPlayerForm({
           className="w-full border border-pb-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pb-green"
         >
           {SKILL_LEVELS.map((s) => (
-            <option key={s} value={s}>
-              {SKILL_LABELS[s]}
-            </option>
+            <option key={s} value={s}>{SKILL_LABELS[s]}</option>
           ))}
         </select>
         <button
@@ -488,7 +452,6 @@ function AddPlayerForm({
         </button>
       </form>
 
-      {/* Pick from Roster */}
       <div className="border border-pb-border rounded-lg overflow-hidden">
         <button
           type="button"
@@ -533,18 +496,92 @@ function AddPlayerForm({
   );
 }
 
+// ─── Kiosk QR Modal ───────────────────────────────────────────────────────────
+
+function KioskQRModal({ onClose }: { onClose: () => void }) {
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/kiosk` : '/kiosk';
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6 flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between w-full">
+          <h2 className="text-base font-bold text-pb-green">Kiosk Check-in</h2>
+          <button onClick={onClose} className="text-pb-text/30 hover:text-pb-text text-2xl leading-none">×</button>
+        </div>
+        <div className="bg-white p-3 rounded-xl border border-pb-border">
+          <QRCode value={url} size={180} />
+        </div>
+        <p className="text-xs text-pb-text/50 text-center">
+          Players scan this with their phone to self check-in on the kiosk page.
+        </p>
+        <p className="text-xs font-mono text-pb-text/40 break-all text-center">{url}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Session History Modal ────────────────────────────────────────────────────
+
+function SessionHistoryModal({ onClose }: { onClose: () => void }) {
+  const [logs, setLogs] = useState<SessionLog[]>([]);
+
+  useEffect(() => {
+    import('../lib/storage').then(({ loadSessionHistory }) => {
+      setLogs(loadSessionHistory());
+    });
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-pb-green">Session History</h2>
+          <button onClick={onClose} className="text-pb-text/30 hover:text-pb-text text-2xl leading-none">×</button>
+        </div>
+        {logs.length === 0 ? (
+          <p className="text-sm text-pb-text/40 text-center py-8">No sessions recorded yet. End a session to save history.</p>
+        ) : (
+          <div className="overflow-y-auto flex flex-col gap-3">
+            {logs.map((log) => (
+              <div key={log.id} className="border border-pb-border rounded-xl px-4 py-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-pb-text">
+                    {new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                  <span className="text-xs text-pb-text/40">
+                    {new Date(log.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="flex gap-4 text-xs text-pb-text/60">
+                  <span>🎾 {log.gamesPlayed} games</span>
+                  <span>👤 {log.uniquePlayers.length} players</span>
+                  {log.avgGameMs > 0 && <span>⏱ avg {formatMs(log.avgGameMs)}</span>}
+                </div>
+                {log.uniquePlayers.length > 0 && (
+                  <p className="text-xs text-pb-text/40 mt-1 truncate">
+                    {log.uniquePlayers.slice(0, 8).join(', ')}{log.uniquePlayers.length > 8 ? ` +${log.uniquePlayers.length - 8}` : ''}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function OpenPlayPage() {
   const [session, setSession] = useState<OpenPlaySession | null>(null);
   const [tick, setTick] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
-  // Load from localStorage once mounted
   useEffect(() => {
     setSession(loadOpenPlay());
   }, []);
 
-  // Timer tick every second for court timers
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
@@ -561,6 +598,9 @@ export default function OpenPlayPage() {
 
   const activeCourts = session.courts.filter((c) => c.game !== null).length;
   const openCourts = session.courts.filter((c) => c.game === null).length;
+  const avgGameMs = session.gameDurations.length > 0
+    ? session.gameDurations.reduce((a, b) => a + b, 0) / session.gameDurations.length
+    : 15 * 60 * 1000; // default 15 min
 
   function handleAddPlayer(name: string, skillLevel: SkillLevel) {
     const player: QueuedPlayer = { id: uid(), name, skillLevel, queuedAt: Date.now() };
@@ -592,9 +632,7 @@ export default function OpenPlayPage() {
     const skipped = queue.find((p) => p.id === skippedId);
     if (!skipped) return;
     const skipIdx = queue.findIndex((p) => p.id === skippedId);
-
     if (withId === 'auto') {
-      // Move skipped player to end; queue naturally shifts up
       update({ ...session!, queue: [...queue.filter((p) => p.id !== skippedId), skipped] });
     } else {
       const replacement = queue.find((p) => p.id === withId);
@@ -606,12 +644,60 @@ export default function OpenPlayPage() {
     }
   }
 
+  // Drag a queued player onto an empty court (auto-fills from queue front + this player)
+  function handleDropPlayer(courtId: number, playerId: string) {
+    const player = session!.queue.find((p) => p.id === playerId);
+    if (!player) return;
+    const court = session!.courts.find((c) => c.id === courtId);
+    if (!court || court.game !== null) return;
+
+    // Move this player to front of queue, then auto-assign this court
+    const reordered = [player, ...session!.queue.filter((p) => p.id !== playerId)];
+    const needed = Math.min(4, reordered.length);
+    const gamePlayers = reordered.slice(0, needed);
+    const remaining = reordered.slice(needed);
+    const courts = session!.courts.map((c) =>
+      c.id === courtId ? { ...c, game: { players: gamePlayers, startTime: Date.now() } } : c
+    );
+    update({ ...session!, courts, queue: remaining });
+  }
+
   function handleReset() {
     if (!confirm('Reset all courts and clear the queue? This cannot be undone.')) return;
     update({
       ...session!,
       courts: Array.from({ length: session!.courtCount }, (_, i) => ({ id: i + 1, game: null })),
       queue: [],
+    });
+  }
+
+  function handleEndSession() {
+    if (!confirm('End session? This will save a history record and reset all courts and the queue.')) return;
+
+    // Collect all player names currently in play or queued
+    const allNames = new Set<string>();
+    for (const court of session!.courts) {
+      court.game?.players.forEach((p) => allNames.add(p.name));
+    }
+    session!.queue.forEach((p) => allNames.add(p.name));
+
+    const gamesPlayed = session!.gameDurations.length;
+    const log: SessionLog = {
+      id: uid(),
+      date: Date.now(),
+      gamesPlayed,
+      uniquePlayers: [...allNames],
+      avgGameMs: gamesPlayed > 0
+        ? session!.gameDurations.reduce((a, b) => a + b, 0) / gamesPlayed
+        : 0,
+    };
+    appendSessionLog(log);
+
+    update({
+      ...session!,
+      courts: Array.from({ length: session!.courtCount }, (_, i) => ({ id: i + 1, game: null })),
+      queue: [],
+      gameDurations: [],
     });
   }
 
@@ -664,19 +750,9 @@ export default function OpenPlayPage() {
 
           {/* Court count */}
           <div className="flex items-center gap-1 border border-pb-border rounded-lg overflow-hidden text-sm">
-            <button
-              onClick={() => handleCourtCount(-1)}
-              className="px-3 py-1.5 bg-white hover:bg-pb-bg font-bold transition-colors"
-            >
-              −
-            </button>
+            <button onClick={() => handleCourtCount(-1)} className="px-3 py-1.5 bg-white hover:bg-pb-bg font-bold transition-colors">−</button>
             <span className="px-2 font-semibold text-pb-green">{session.courtCount} courts</span>
-            <button
-              onClick={() => handleCourtCount(1)}
-              className="px-3 py-1.5 bg-white hover:bg-pb-bg font-bold transition-colors"
-            >
-              +
-            </button>
+            <button onClick={() => handleCourtCount(1)} className="px-3 py-1.5 bg-white hover:bg-pb-bg font-bold transition-colors">+</button>
           </div>
 
           <button
@@ -688,16 +764,37 @@ export default function OpenPlayPage() {
           </button>
 
           <button
-            onClick={handleReset}
-            className="text-red-500 hover:text-red-700 text-sm font-medium px-2 transition-colors"
+            onClick={() => setQrOpen(true)}
+            className="text-pb-text/50 hover:text-pb-green text-sm font-medium px-2 transition-colors"
+            title="Share kiosk QR code"
           >
+            📲 Kiosk QR
+          </button>
+
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="text-pb-text/50 hover:text-pb-green text-sm font-medium px-2 transition-colors"
+            title="View session history"
+          >
+            📋 History
+          </button>
+
+          <button
+            onClick={handleEndSession}
+            className="text-orange-500 hover:text-orange-700 text-sm font-medium px-2 transition-colors"
+            title="Save history and reset session"
+          >
+            End Session
+          </button>
+
+          <button onClick={handleReset} className="text-red-500 hover:text-red-700 text-sm font-medium px-2 transition-colors">
             Reset
           </button>
         </div>
       </div>
 
       {/* Stats banner */}
-      <div className="flex gap-2 mb-8 flex-wrap">
+      <div className="flex gap-2 mb-4 flex-wrap">
         <span className="px-3 py-1 rounded-full text-xs font-semibold bg-pb-green/15 text-pb-green border border-pb-green/20">
           {activeCourts} Active
         </span>
@@ -707,22 +804,28 @@ export default function OpenPlayPage() {
         <span className="px-3 py-1 rounded-full text-xs font-semibold bg-pb-yellow/20 text-pb-text border border-pb-yellow/30">
           {session.queue.length} In Queue
         </span>
+        {session.gameDurations.length > 0 && (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-pb-text/5 text-pb-text/50 border border-pb-border">
+            avg {formatMs(avgGameMs)} / game
+          </span>
+        )}
       </div>
+
+      <p className="text-xs text-pb-text/30 mb-6">Drag a player from the queue onto an empty court to assign them directly.</p>
 
       <OnDeckPanel queue={session.queue} onReplace={handleReplacePlayer} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Courts grid */}
         <div className="lg:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-pb-text/50 mb-3">
-            Courts
-          </h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-pb-text/50 mb-3">Courts</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {session.courts.map((court) => (
               <PickleballCourt
                 key={court.id}
                 court={court}
                 onEndGame={handleEndGame}
+                onDropPlayer={handleDropPlayer}
                 tick={tick}
               />
             ))}
@@ -732,14 +835,8 @@ export default function OpenPlayPage() {
         {/* Queue sidebar */}
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-pb-text/50 mb-3">
-              Add Player
-            </h2>
-            <AddPlayerForm
-              onAdd={handleAddPlayer}
-              queue={session.queue}
-              session={session}
-            />
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-pb-text/50 mb-3">Add Player</h2>
+            <AddPlayerForm onAdd={handleAddPlayer} queue={session.queue} session={session} />
           </div>
 
           <div>
@@ -751,10 +848,14 @@ export default function OpenPlayPage() {
               onRemove={handleRemovePlayer}
               activeCourts={activeCourts}
               courtCount={session.courtCount}
+              avgGameMs={avgGameMs}
             />
           </div>
         </div>
       </div>
+
+      {qrOpen && <KioskQRModal onClose={() => setQrOpen(false)} />}
+      {historyOpen && <SessionHistoryModal onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

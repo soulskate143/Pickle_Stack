@@ -29,3 +29,31 @@ body {
   color: var(--pb-text);
   overflow-x: hidden;
 }
+
+/* ── Dark mode ────────────────────────────────────────────────── */
+html.dark {
+  --pb-bg: #0f1a14;
+  --pb-text: #d4e8dc;
+  --pb-border: #2a4035;
+  --pb-card: #182518;
+}
+
+html.dark body {
+  background: var(--pb-bg);
+  color: var(--pb-text);
+}
+
+/* Keep inputs readable in dark mode */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background: #1e3028;
+  color: var(--pb-text);
+  border-color: var(--pb-border);
+  color-scheme: dark;
+}
+
+@media print {
+  header, footer, nav, .no-print { display: none !important; }
+  body { background: white; color: black; }
+}

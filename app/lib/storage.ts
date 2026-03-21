@@ -1,7 +1,8 @@
-import type { OpenPlaySession, PlayerProfile, Tournament } from './types';
+import type { OpenPlaySession, PlayerProfile, SessionLog, Tournament } from './types';
 
 const OPEN_PLAY_KEY = 'pb_open_play';
 const TOURNAMENTS_KEY = 'pb_tournaments';
+const SESSION_HISTORY_KEY = 'pb_session_history';
 
 function defaultOpenPlay(): OpenPlaySession {
   return {
@@ -9,6 +10,7 @@ function defaultOpenPlay(): OpenPlaySession {
     courts: Array.from({ length: 4 }, (_, i) => ({ id: i + 1, game: null })),
     queue: [],
     stackingMode: 'fifo',
+    gameDurations: [],
   };
 }
 
@@ -17,7 +19,10 @@ export function loadOpenPlay(): OpenPlaySession {
   try {
     const raw = localStorage.getItem(OPEN_PLAY_KEY);
     if (!raw) return defaultOpenPlay();
-    return JSON.parse(raw) as OpenPlaySession;
+    const parsed = JSON.parse(raw) as OpenPlaySession;
+    // migrate old sessions missing gameDurations
+    if (!parsed.gameDurations) parsed.gameDurations = [];
+    return parsed;
   } catch {
     return defaultOpenPlay();
   }
@@ -96,4 +101,24 @@ export function upsertPlayer(player: PlayerProfile): void {
 
 export function deletePlayer(id: string): void {
   savePlayers(loadPlayers().filter((p) => p.id !== id));
+}
+
+// ─── Session History ──────────────────────────────────────────────────────────
+
+export function loadSessionHistory(): SessionLog[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SESSION_HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as SessionLog[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function appendSessionLog(log: SessionLog): void {
+  if (typeof window === 'undefined') return;
+  const all = loadSessionHistory();
+  all.unshift(log); // newest first
+  // keep last 50 sessions
+  localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(all.slice(0, 50)));
 }

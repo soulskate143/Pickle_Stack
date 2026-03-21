@@ -159,20 +159,34 @@ export function generateSingleElimination(tournament: Tournament): TournamentMat
   return applyByes(matches);
 }
 
-/** After recording a score for a match, propagate winner to next round */
+/** After recording a score for a match, propagate winner to next round and loser to 3rd place */
 export function propagateWinner(matches: TournamentMatch[], match: TournamentMatch): TournamentMatch[] {
   if (!match.winnerId) return matches;
   const nextRound = match.round + 1;
   const nextSlot = Math.floor(match.slot / 2);
   const isFirstInPair = match.slot % 2 === 0;
 
+  // Derive loser
+  const loserId = match.winnerId === match.entrant1Id ? match.entrant2Id : match.entrant1Id;
+
   return matches.map((m) => {
-    if (m.round !== nextRound || m.slot !== nextSlot) return m;
-    return {
-      ...m,
-      entrant1Id: isFirstInPair ? match.winnerId : m.entrant1Id,
-      entrant2Id: isFirstInPair ? m.entrant2Id : match.winnerId,
-    };
+    // Propagate winner to next bracket round
+    if (m.round === nextRound && m.slot === nextSlot && !m.is3rdPlace) {
+      return {
+        ...m,
+        entrant1Id: isFirstInPair ? match.winnerId : m.entrant1Id,
+        entrant2Id: isFirstInPair ? m.entrant2Id : match.winnerId,
+      };
+    }
+    // Propagate loser to 3rd place match (if exists, in the same final round)
+    if (m.is3rdPlace && loserId) {
+      return {
+        ...m,
+        entrant1Id: isFirstInPair ? loserId : m.entrant1Id,
+        entrant2Id: isFirstInPair ? m.entrant2Id : loserId,
+      };
+    }
+    return m;
   });
 }
 
@@ -248,7 +262,8 @@ export function createEmptyTournament(
   format: Tournament['format'],
   matchType: MatchType,
   maxScore: number = 11,
-  winCondition: WinCondition = 'win-by-2'
+  winCondition: WinCondition = 'win-by-2',
+  include3rdPlace: boolean = false
 ): Tournament {
   return {
     id: uid(),
@@ -263,6 +278,7 @@ export function createEmptyTournament(
     matches: [],
     maxScore,
     winCondition,
+    include3rdPlace,
   };
 }
 
@@ -290,6 +306,22 @@ export function generateSchedule(tournament: Tournament): Tournament {
     matches = generateRoundRobin(tournament);
   } else {
     matches = generateSingleElimination(tournament);
+    // Add 3rd place match in the final round alongside the final
+    if (tournament.include3rdPlace && matches.length > 0) {
+      const finalRound = Math.max(...matches.map((m) => m.round));
+      matches.push({
+        id: uid(),
+        round: finalRound,
+        slot: 1, // slot 0 = final, slot 1 = 3rd place
+        entrant1Id: null,
+        entrant2Id: null,
+        score1: null,
+        score2: null,
+        winnerId: null,
+        status: 'pending',
+        is3rdPlace: true,
+      });
+    }
   }
   return { ...tournament, matches, status: 'active' };
 }

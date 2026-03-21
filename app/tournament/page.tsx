@@ -27,11 +27,12 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t:
   const [matchType, setMatchType] = useState<MatchType>('doubles');
   const [maxScore, setMaxScore] = useState(11);
   const [winCondition, setWinCondition] = useState<'sudden-death' | 'win-by-2'>('win-by-2');
+  const [include3rdPlace, setInclude3rdPlace] = useState(false);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(createEmptyTournament(name.trim(), location.trim(), date, format, matchType, maxScore, winCondition));
+    onCreate(createEmptyTournament(name.trim(), location.trim(), date, format, matchType, maxScore, winCondition, include3rdPlace));
     onClose();
   }
 
@@ -121,6 +122,18 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t:
               <option value="sudden-death">Sudden Death</option>
             </select>
           </label>
+
+          {format === 'single-elimination' && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={include3rdPlace}
+                onChange={(e) => setInclude3rdPlace(e.target.checked)}
+                className="w-4 h-4 accent-pb-green"
+              />
+              <span className="font-medium">Include 3rd place consolation match</span>
+            </label>
+          )}
 
           <div className="flex gap-2 mt-2">
             <button

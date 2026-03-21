@@ -52,22 +52,28 @@ export function endGame(
   courtId: number,
   requeuePlayers: boolean
 ): OpenPlaySession {
+  const court = session.courts.find((c) => c.id === courtId);
   const courts = session.courts.map((c) => {
     if (c.id !== courtId) return c;
     return { ...c, game: null };
   });
 
-  const finishedPlayers =
-    session.courts.find((c) => c.id === courtId)?.game?.players ?? [];
+  const finishedPlayers = court?.game?.players ?? [];
+
+  // Record game duration for wait time estimates
+  const gameDurations = [...(session.gameDurations ?? [])];
+  if (court?.game?.startTime) {
+    gameDurations.push(Date.now() - court.game.startTime);
+    if (gameDurations.length > 20) gameDurations.splice(0, gameDurations.length - 20);
+  }
 
   let queue = [...session.queue];
   if (requeuePlayers) {
-    // Re-queue with fresh timestamp (go to back of line)
     const requeued = finishedPlayers.map((p) => ({ ...p, queuedAt: Date.now() }));
     queue = [...queue, ...requeued];
   }
 
-  return { ...session, courts, queue };
+  return { ...session, courts, queue, gameDurations };
 }
 
 /** Set court count — add or trim courts */

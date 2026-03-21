@@ -45,6 +45,15 @@ export interface OpenPlaySession {
   courts: Court[];
   queue: QueuedPlayer[];
   stackingMode: StackingMode;
+  gameDurations: number[]; // ms durations of completed games, for avg wait estimate
+}
+
+export interface SessionLog {
+  id: string;
+  date: number;       // timestamp when session was ended
+  gamesPlayed: number;
+  uniquePlayers: string[];
+  avgGameMs: number;
 }
 
 // ─── Tournament ───────────────────────────────────────────────────────────────
@@ -76,6 +85,7 @@ export interface TournamentMatch {
   winnerId: string | null;
   status: 'pending' | 'in-progress' | 'completed';
   umpire?: string;
+  is3rdPlace?: boolean; // consolation match in single-elimination
 }
 
 export interface RoundRobinStanding {
@@ -99,4 +109,5 @@ export interface Tournament {
   matches: TournamentMatch[];
   maxScore: number;
   winCondition: WinCondition;
+  include3rdPlace?: boolean;
 }

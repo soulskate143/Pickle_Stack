@@ -14,6 +14,20 @@ const NAV_LINKS = [
 export default function ConditionalHeader() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('pb-dark') === '1';
+    setDark(saved);
+    document.documentElement.classList.toggle('dark', saved);
+  }, []);
+
+  function toggleDark() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    localStorage.setItem('pb-dark', next ? '1' : '0');
+  }
 
   // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [pathname]);
@@ -55,6 +69,15 @@ export default function ConditionalHeader() {
               LIVE
             </Link>
           </div>
+
+          {/* Dark mode toggle — desktop */}
+          <button
+            onClick={toggleDark}
+            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors text-base"
+          >
+            {dark ? '☀️' : '🌙'}
+          </button>
 
           {/* Mobile: LIVE + hamburger */}
           <div className="flex sm:hidden items-center gap-3">
@@ -107,6 +130,12 @@ export default function ConditionalHeader() {
                 {l.label}
               </Link>
             ))}
+            <button
+              onClick={toggleDark}
+              className="w-full text-left px-6 py-4 text-white/80 hover:text-white hover:bg-white/10 font-medium text-base transition-colors"
+            >
+              {dark ? '☀️ Light Mode' : '🌙 Dark Mode'}
+            </button>
           </div>
         </div>
       )}
