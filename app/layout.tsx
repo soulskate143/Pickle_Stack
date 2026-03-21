@@ -19,8 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         <main className="flex-1">{children}</main>
 
-        <footer className="bg-pb-green border-t border-pb-green py-3 text-center text-xs text-white/70">
-          Valencia Pickle Club &mdash; Keep the courts moving
+        <footer className="bg-pb-green border-t border-pb-green py-4 text-center text-xs text-white/70">
+          <p>Valencia Pickle Club &mdash; Keep the courts moving</p>
+          <p className="mt-1">&copy; 2026 Marvin Toh. All rights reserved.</p>
         </footer>
       </body>
     </html>

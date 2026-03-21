@@ -27,4 +27,5 @@ body {
   font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
   background: var(--pb-bg);
   color: var(--pb-text);
+  overflow-x: hidden;
 }
