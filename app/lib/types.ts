@@ -58,9 +58,15 @@ export interface SessionLog {
 
 // ─── Tournament ───────────────────────────────────────────────────────────────
 
-export type TournamentFormat = 'round-robin' | 'single-elimination';
+export type TournamentFormat = 'round-robin' | 'single-elimination' | 'group-stage';
 export type MatchType = 'singles' | 'doubles';
 export type WinCondition = 'sudden-death' | 'win-by-2';
+
+export interface TournamentGroup {
+  id: string;
+  name: string; // "Group A", "Group B", etc.
+  entrantIds: string[];
+}
 
 export interface TournamentPlayer {
   id: string;
@@ -86,6 +92,8 @@ export interface TournamentMatch {
   status: 'pending' | 'in-progress' | 'completed';
   umpire?: string;
   is3rdPlace?: boolean; // consolation match in single-elimination
+  groupId?: string;     // group-stage: which group this match belongs to
+  phase?: 'group' | 'playoff'; // group-stage: group round-robin or playoff bracket
 }
 
 export interface RoundRobinStanding {
@@ -110,4 +118,5 @@ export interface Tournament {
   maxScore: number;
   winCondition: WinCondition;
   include3rdPlace?: boolean;
+  groups?: TournamentGroup[]; // group-stage: the groups/brackets
 }

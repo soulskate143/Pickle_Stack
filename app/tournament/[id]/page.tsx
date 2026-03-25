@@ -7,6 +7,8 @@ import {
   addPlayer,
   addTeam,
   computeStandings,
+  computeGroupStandings,
+  determineGroupCount,
   generateSchedule,
   getEntrantName,
   recordScore,
@@ -33,6 +35,171 @@ function getMatchTop(roundIdx: number, matchIdx: number): number {
 
 function getBracketHeight(r1Count: number): number {
   return r1Count * UNIT - R1_GAP;
+}
+
+// ─── Wheel of Fortune modal (bye selection) ───────────────────────────────────
+
+const WHEEL_COLORS = [
+  '#22c55e', '#f59e0b', '#3b82f6', '#ef4444',
+  '#8b5cf6', '#06b6d4', '#f97316', '#ec4899',
+  '#10b981', '#e11d48', '#6366f1', '#0ea5e9',
+];
+
+function polarXY(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function pieSegment(cx: number, cy: number, r: number, start: number, end: number) {
+  const s = polarXY(cx, cy, r, start);
+  const e = polarXY(cx, cy, r, end);
+  const large = end - start > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)} Z`;
+}
+
+/**
+ * Wheel-of-fortune spinner shown when single-elimination has an odd number of
+ * teams (one team gets a first-round bye). Spins randomly and reveals the
+ * bye recipient.
+ */
+function WheelOfFortuneModal({
+  names,
+  onConfirm,
+  onClose,
+}: {
+  names: string[];         // all entrant names
+  onConfirm: (byeIndex: number) => void; // index into names[] who gets the bye
+  onClose: () => void;
+}) {
+  const n = names.length;
+  const segAngle = 360 / n;
+  const CX = 120, CY = 120, R = 108, INNER = 24;
+
+  const [rotation, setRotation] = useState(0);
+  const [spinning, setSpinning] = useState(false);
+  const [winner, setWinner] = useState<number | null>(null);
+
+  function spin() {
+    if (spinning) return;
+    const idx = Math.floor(Math.random() * n);
+    // Target: center of winner segment is at top (0°)
+    const center = (idx + 0.5) * segAngle;
+    // Add 5 full rotations + offset to land on winner
+    const extra = ((360 - (center % 360)) + 360) % 360;
+    const total = rotation + 360 * 5 + extra;
+    setRotation(total);
+    setSpinning(true);
+    setWinner(null);
+    setTimeout(() => {
+      setSpinning(false);
+      setWinner(idx);
+    }, 3800);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center gap-4">
+        <h2 className="text-lg font-bold text-pb-green">Bye Draw</h2>
+        <p className="text-xs text-pb-text/50 text-center -mt-2">
+          Spin the wheel to randomly select which team receives the first-round bye.
+        </p>
+
+        {/* Wheel */}
+        <div className="relative select-none">
+          {/* Arrow indicator */}
+          <svg
+            width={240}
+            height={16}
+            className="absolute top-0 left-0 z-10"
+            style={{ pointerEvents: 'none' }}
+          >
+            <polygon
+              points={`${CX},2 ${CX - 10},15 ${CX + 10},15`}
+              fill="#f97316"
+            />
+          </svg>
+
+          {/* Spinning wheel */}
+          <svg
+            width={240}
+            height={240}
+            style={{
+              transform: `rotate(${rotation}deg)`,
+              transition: spinning
+                ? 'transform 3.8s cubic-bezier(0.17, 0.67, 0.08, 0.99)'
+                : 'none',
+            }}
+          >
+            {names.map((name, i) => {
+              const start = i * segAngle;
+              const end = (i + 1) * segAngle;
+              const color = WHEEL_COLORS[i % WHEEL_COLORS.length];
+              const textAngle = (start + end) / 2;
+              const tp = polarXY(CX, CY, R * 0.65, textAngle);
+              const maxLen = 10;
+              const label = name.length > maxLen ? name.slice(0, maxLen - 1) + '…' : name;
+
+              return (
+                <g key={i}>
+                  <path d={pieSegment(CX, CY, R, start, end)} fill={color} stroke="#fff" strokeWidth={1} />
+                  <text
+                    x={tp.x}
+                    y={tp.y}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={n > 10 ? 8 : n > 6 ? 9 : 11}
+                    fontWeight="600"
+                    fill="#fff"
+                    transform={`rotate(${textAngle}, ${tp.x}, ${tp.y})`}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            {/* Center circle */}
+            <circle cx={CX} cy={CY} r={INNER} fill="#fff" stroke="#e5e7eb" strokeWidth={2} />
+            <text x={CX} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#6b7280" fontWeight="700">BYE</text>
+          </svg>
+        </div>
+
+        {/* Result */}
+        {winner !== null && (
+          <div className="bg-pb-green/10 border border-pb-green/30 rounded-xl px-4 py-3 text-center w-full">
+            <p className="text-xs text-pb-text/50 mb-1">Bye goes to</p>
+            <p className="text-base font-bold text-pb-green">{names[winner]}</p>
+            <p className="text-xs text-pb-text/40 mt-1">They advance straight to Round 2</p>
+          </div>
+        )}
+
+        <div className="flex gap-2 w-full">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-pb-border rounded-lg py-2 text-sm font-medium hover:bg-pb-bg transition-colors"
+          >
+            Cancel
+          </button>
+          {winner === null ? (
+            <button
+              onClick={spin}
+              disabled={spinning}
+              className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-60 text-white rounded-lg py-2 text-sm font-bold transition-colors"
+            >
+              {spinning ? 'Spinning…' : '🎡 Spin!'}
+            </button>
+          ) : (
+            <button
+              onClick={() => onConfirm(winner)}
+              className="flex-1 bg-pb-green hover:bg-pb-green/80 text-white rounded-lg py-2 text-sm font-semibold transition-colors"
+            >
+              Confirm & Generate
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Bracket match card ───────────────────────────────────────────────────────
@@ -148,14 +315,20 @@ function BracketMatchCard({
 function BracketView({
   tournament,
   onChange,
+  phaseFilter,
 }: {
   tournament: Tournament;
   onChange: (t: Tournament) => void;
+  phaseFilter?: 'playoff';
 }) {
   const [scoringMatch, setScoringMatch] = useState<TournamentMatch | null>(null);
 
-  const match3rd = tournament.matches.find((m) => m.is3rdPlace) ?? null;
-  const rounds = Array.from(new Set(tournament.matches.filter((m) => !m.is3rdPlace).map((m) => m.round)))
+  const allMatches = phaseFilter
+    ? tournament.matches.filter((m) => m.phase === phaseFilter)
+    : tournament.matches.filter((m) => !m.phase || m.phase === undefined);
+
+  const match3rd = (!phaseFilter ? tournament.matches.find((m) => m.is3rdPlace) : null) ?? null;
+  const rounds = Array.from(new Set(allMatches.filter((m) => !m.is3rdPlace).map((m) => m.round)))
     .sort((a, b) => a - b);
 
   if (rounds.length === 0) {
@@ -163,7 +336,7 @@ function BracketView({
   }
 
   const matchesByRound = rounds.map((r) =>
-    tournament.matches.filter((m) => m.round === r && !m.is3rdPlace).sort((a, b) => a.slot - b.slot)
+    allMatches.filter((m) => m.round === r && !m.is3rdPlace).sort((a, b) => a.slot - b.slot)
   );
 
   const r1Count = matchesByRound[0].length;
@@ -501,6 +674,134 @@ function RoundRobinView({
   );
 }
 
+// ─── Group Stage view ─────────────────────────────────────────────────────────
+
+function GroupStageView({
+  tournament,
+  onChange,
+}: {
+  tournament: Tournament;
+  onChange: (t: Tournament) => void;
+}) {
+  const [scoringMatch, setScoringMatch] = useState<TournamentMatch | null>(null);
+  const groups = tournament.groups ?? [];
+
+  const playoffMatches = tournament.matches.filter((m) => m.phase === 'playoff');
+  const playoffStarted = playoffMatches.some(
+    (m) => m.entrant1Id !== null || m.entrant2Id !== null
+  );
+
+  function handleSave(matchId: string, s1: number, s2: number) {
+    onChange(recordScore(tournament, matchId, s1, s2));
+  }
+
+  return (
+    <div className="flex flex-col gap-8">
+      {/* Groups */}
+      {groups.map((group) => {
+        const groupMatches = tournament.matches
+          .filter((m) => m.groupId === group.id)
+          .sort((a, b) => a.round - b.round || a.slot - b.slot);
+        const allDone = groupMatches.length > 0 && groupMatches.every((m) => m.status === 'completed');
+        const standings = computeGroupStandings(tournament, group.id);
+        const winner = allDone ? standings[0] : null;
+
+        return (
+          <div key={group.id} className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-pb-text">
+                {group.name}
+              </h3>
+              {winner && (
+                <span className="text-xs bg-pb-green text-white px-2 py-0.5 rounded-full font-semibold">
+                  Winner: {getEntrantName(tournament, winner.entrantId)}
+                </span>
+              )}
+              {!allDone && (
+                <span className="text-xs text-pb-text/40">
+                  {groupMatches.filter((m) => m.status === 'completed').length}/{groupMatches.length} matches
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Matches */}
+              <div className="rounded-xl bg-zinc-900 p-3 flex flex-col gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 mb-1">Matches</p>
+                {groupMatches.map((match) => (
+                  <BracketMatchCard
+                    key={match.id}
+                    match={match}
+                    tournament={tournament}
+                    onScore={setScoringMatch}
+                    tournamentId={tournament.id}
+                  />
+                ))}
+              </div>
+
+              {/* Group standings */}
+              <div className="rounded-xl border border-pb-border overflow-hidden self-start">
+                <table className="w-full text-sm">
+                  <thead className="bg-pb-bg">
+                    <tr className="text-left text-xs text-pb-text/50">
+                      <th className="px-3 py-2 font-semibold">#</th>
+                      <th className="px-3 py-2 font-semibold">Team</th>
+                      <th className="px-3 py-2 font-semibold text-center">W</th>
+                      <th className="px-3 py-2 font-semibold text-center">L</th>
+                      <th className="px-3 py-2 font-semibold text-center">+/−</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-pb-border/50">
+                    {standings.map((s, i) => (
+                      <tr key={s.entrantId} className={i === 0 && allDone ? 'bg-pb-green/10' : ''}>
+                        <td className="px-3 py-2 text-pb-text/40 text-xs">{i + 1}</td>
+                        <td className="px-3 py-2 font-medium text-xs flex items-center gap-1">
+                          {i === 0 && allDone && <span>🏆</span>}
+                          <span className={i === 0 && allDone ? 'text-pb-green font-bold' : ''}>
+                            {getEntrantName(tournament, s.entrantId)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center font-semibold text-pb-green text-xs">{s.wins}</td>
+                        <td className="px-3 py-2 text-center text-pb-text/60 text-xs">{s.losses}</td>
+                        <td className="px-3 py-2 text-center text-pb-text/60 text-xs">
+                          {s.pointsFor - s.pointsAgainst > 0 ? '+' : ''}
+                          {s.pointsFor - s.pointsAgainst}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Playoff bracket */}
+      <div className="border-t border-pb-border pt-6">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-pb-text mb-3">
+          Playoff Bracket
+          {!playoffStarted && (
+            <span className="ml-2 text-xs font-normal text-pb-text/40 normal-case">
+              — Group winners advance here automatically
+            </span>
+          )}
+        </h3>
+        <BracketView tournament={tournament} onChange={onChange} phaseFilter="playoff" />
+      </div>
+
+      {scoringMatch && (
+        <ScoreModal
+          match={scoringMatch}
+          tournament={tournament}
+          onSave={handleSave}
+          onClose={() => setScoringMatch(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Import from Roster modal ─────────────────────────────────────────────────
 
 function ImportRosterModal({
@@ -637,18 +938,44 @@ function SetupTab({
     onChange({ ...tournament, teams: tournament.teams.filter((t) => t.id !== id) });
   }
 
+  const [showWheel, setShowWheel] = useState(false);
+
   function handleGenerate() {
-    const entrantCount = isDoubles ? tournament.teams.length : tournament.players.length;
-    if (entrantCount < 2) {
+    const entrantIds = isDoubles
+      ? tournament.teams.map((t) => t.id)
+      : tournament.players.map((p) => p.id);
+    if (entrantIds.length < 2) {
       alert(`Need at least 2 ${isDoubles ? 'teams' : 'players'} to generate a schedule.`);
+      return;
+    }
+    // Single-elimination with odd teams → show wheel to randomly pick the bye recipient
+    if (tournament.format === 'single-elimination' && entrantIds.length % 2 === 1) {
+      setShowWheel(true);
       return;
     }
     onChange(generateSchedule(tournament));
   }
 
+  function handleWheelConfirm(byeIndex: number) {
+    setShowWheel(false);
+    const allIds = isDoubles
+      ? tournament.teams.map((t) => t.id)
+      : tournament.players.map((p) => p.id);
+    // Place bye recipient last so they face the null slot in round 1
+    const byeId = allIds[byeIndex];
+    const others = allIds.filter((_, i) => i !== byeIndex).sort(() => Math.random() - 0.5);
+    const orderedIds = [...others, byeId];
+    onChange(generateSchedule(tournament, orderedIds));
+  }
+
   const canGenerate =
     (isDoubles ? tournament.teams.length : tournament.players.length) >= 2 &&
     tournament.status === 'setup';
+
+  // Names for the wheel
+  const entrantNames = isDoubles
+    ? tournament.teams.map((t) => t.name)
+    : tournament.players.map((p) => p.name);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -827,11 +1154,17 @@ function SetupTab({
 
       {/* Generate */}
       <div className="md:col-span-2 border-t border-pb-border pt-6 flex items-center justify-between gap-4">
-        <p className="text-sm text-pb-text/60">
-          {canGenerate
-            ? 'Ready to generate the schedule.'
-            : `Add at least 2 ${isDoubles ? 'teams' : 'players'} to generate.`}
-        </p>
+        <div>
+          <p className="text-sm text-pb-text/60">
+            {canGenerate
+              ? tournament.format === 'single-elimination' && entrantNames.length % 2 === 1
+                ? 'Odd number of teams — a bye will be drawn randomly.'
+                : tournament.format === 'group-stage'
+                  ? `Teams will be split into ${determineGroupCount(entrantNames.length)} group${determineGroupCount(entrantNames.length) > 1 ? 's' : ''} of ~${Math.ceil(entrantNames.length / determineGroupCount(entrantNames.length))} — round-robin within each group, then playoffs.`
+                  : 'Ready to generate the schedule.'
+              : `Add at least 2 ${isDoubles ? 'teams' : 'players'} to generate.`}
+          </p>
+        </div>
         <button
           onClick={handleGenerate}
           disabled={!canGenerate}
@@ -846,6 +1179,14 @@ function SetupTab({
           tournament={tournament}
           onChange={onChange}
           onClose={() => setShowImportRoster(false)}
+        />
+      )}
+
+      {showWheel && (
+        <WheelOfFortuneModal
+          names={entrantNames}
+          onConfirm={handleWheelConfirm}
+          onClose={() => setShowWheel(false)}
         />
       )}
     </div>
@@ -928,10 +1269,13 @@ export default function TournamentDetailPage({
   }
 
   const isElim = tournament.format === 'single-elimination';
+  const isGroupStage = tournament.format === 'group-stage';
+
+  const scheduleLabel = isElim ? 'Bracket' : isGroupStage ? 'Groups & Playoff' : 'Schedule';
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'setup', label: 'Setup' },
-    { id: 'schedule', label: isElim ? 'Bracket' : 'Schedule' },
+    { id: 'schedule', label: scheduleLabel },
     ...(!isElim ? [{ id: 'standings' as Tab, label: 'Standings' }] : []),
   ];
 
@@ -1001,7 +1345,10 @@ export default function TournamentDetailPage({
       {tab === 'schedule' && tournament.matches.length > 0 && isElim && (
         <BracketView tournament={tournament} onChange={handleChange} />
       )}
-      {tab === 'schedule' && tournament.matches.length > 0 && !isElim && (
+      {tab === 'schedule' && tournament.matches.length > 0 && isGroupStage && (
+        <GroupStageView tournament={tournament} onChange={handleChange} />
+      )}
+      {tab === 'schedule' && tournament.matches.length > 0 && !isElim && !isGroupStage && (
         <RoundRobinView tournament={tournament} onChange={handleChange} />
       )}
 

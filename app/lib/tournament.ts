@@ -1,5 +1,6 @@
 import type {
   Tournament,
+  TournamentGroup,
   TournamentMatch,
   TournamentPlayer,
   TournamentTeam,
@@ -10,6 +11,15 @@ import type {
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 /** Returns entrant IDs: player IDs for singles, team IDs for doubles */
@@ -35,10 +45,16 @@ export function getEntrantName(tournament: Tournament, id: string): string {
  */
 export function generateRoundRobin(tournament: Tournament): TournamentMatch[] {
   const ids = getEntrantIds(tournament);
+  return generateRoundRobinForIds(ids);
+}
+
+function generateRoundRobinForIds(
+  ids: string[],
+  groupId?: string
+): TournamentMatch[] {
   const n = ids.length;
   if (n < 2) return [];
 
-  // Pad with BYE if odd
   const padded = n % 2 === 1 ? [...ids, 'BYE'] : [...ids];
   const half = padded.length / 2;
   const fixed = padded[0];
@@ -64,10 +80,10 @@ export function generateRoundRobin(tournament: Tournament): TournamentMatch[] {
           score2: null,
           winnerId: null,
           status: 'pending',
+          ...(groupId ? { groupId, phase: 'group' as const } : {}),
         });
       }
     }
-    // rotate
     rotating.unshift(rotating.pop()!);
     round++;
   }
@@ -85,36 +101,29 @@ function nextPowerOf2(n: number): number {
 
 /**
  * Generates a single-elimination bracket.
- * Byes are distributed to top seeds (first entrants).
+ * Pass `orderedIds` to control seeding order (last team gets the bye when odd).
+ * If omitted, ids are shuffled randomly so bye recipient is random.
  */
-export function generateSingleElimination(tournament: Tournament): TournamentMatch[] {
-  const ids = getEntrantIds(tournament);
+export function generateSingleElimination(
+  tournament: Tournament,
+  orderedIds?: string[]
+): TournamentMatch[] {
+  const ids = orderedIds ?? shuffle(getEntrantIds(tournament));
   const bracketSize = nextPowerOf2(ids.length);
-  const byes = bracketSize - ids.length;
 
-  // Seed: fill first slots with real players, rest are BYE
-  const seeded: (string | null)[] = [
-    ...ids.slice(0, byes).map(() => null), // BYE slots (top seeds get byes)
-    ...ids,
-  ].slice(0, bracketSize);
-
-  // Actually let's distribute byes properly:
-  // Top seeds (first N players) get byes in round 1
   const seeds: (string | null)[] = Array(bracketSize).fill(null);
   ids.forEach((id, i) => (seeds[i] = id));
 
   const matches: TournamentMatch[] = [];
   let round = 1;
   let matchesInRound = bracketSize / 2;
-  let roundSeeds = seeds;
 
   // Round 1: pair seeds
   const r1Matches: TournamentMatch[] = [];
   for (let i = 0; i < matchesInRound; i++) {
-    const e1 = roundSeeds[i * 2] ?? null;
-    const e2 = roundSeeds[i * 2 + 1] ?? null;
+    const e1 = seeds[i * 2] ?? null;
+    const e2 = seeds[i * 2 + 1] ?? null;
 
-    // Auto-resolve byes
     let winnerId: string | null = null;
     let status: TournamentMatch['status'] = 'pending';
     if (e1 === null && e2 !== null) { winnerId = e2; status = 'completed'; }
@@ -159,26 +168,31 @@ export function generateSingleElimination(tournament: Tournament): TournamentMat
   return applyByes(matches);
 }
 
-/** After recording a score for a match, propagate winner to next round and loser to 3rd place */
-export function propagateWinner(matches: TournamentMatch[], match: TournamentMatch): TournamentMatch[] {
+/** After recording a score, propagate winner to next round. Phase-aware. */
+export function propagateWinner(
+  matches: TournamentMatch[],
+  match: TournamentMatch
+): TournamentMatch[] {
   if (!match.winnerId) return matches;
   const nextRound = match.round + 1;
   const nextSlot = Math.floor(match.slot / 2);
   const isFirstInPair = match.slot % 2 === 0;
-
-  // Derive loser
-  const loserId = match.winnerId === match.entrant1Id ? match.entrant2Id : match.entrant1Id;
+  const loserId =
+    match.winnerId === match.entrant1Id ? match.entrant2Id : match.entrant1Id;
 
   return matches.map((m) => {
-    // Propagate winner to next bracket round
-    if (m.round === nextRound && m.slot === nextSlot && !m.is3rdPlace) {
+    if (
+      m.round === nextRound &&
+      m.slot === nextSlot &&
+      !m.is3rdPlace &&
+      m.phase === match.phase
+    ) {
       return {
         ...m,
         entrant1Id: isFirstInPair ? match.winnerId : m.entrant1Id,
         entrant2Id: isFirstInPair ? m.entrant2Id : match.winnerId,
       };
     }
-    // Propagate loser to 3rd place match (if exists, in the same final round)
     if (m.is3rdPlace && loserId) {
       return {
         ...m,
@@ -192,22 +206,29 @@ export function propagateWinner(matches: TournamentMatch[], match: TournamentMat
 
 /**
  * Propagates all bye winners through the bracket round by round.
- * If a match ends up with only one real entrant (the other side was all byes),
- * that entrant is auto-advanced as well. Handles cascading byes.
+ * Can be scoped to a specific phase (for group-stage playoffs).
  */
-function applyByes(matches: TournamentMatch[]): TournamentMatch[] {
-  const maxRound = Math.max(...matches.map((m) => m.round));
+function applyByes(
+  matches: TournamentMatch[],
+  phase?: 'group' | 'playoff'
+): TournamentMatch[] {
+  const inScope = (m: TournamentMatch) =>
+    phase ? m.phase === phase : m.phase === undefined;
+
+  const scoped = matches.filter(inScope);
+  if (scoped.length === 0) return matches;
+  const maxRound = Math.max(...scoped.map((m) => m.round));
   let result = [...matches];
 
   for (let r = 1; r < maxRound; r++) {
-    // Propagate all completed matches in this round
-    const completed = result.filter((m) => m.round === r && m.status === 'completed' && m.winnerId);
+    const completed = result.filter(
+      (m) => inScope(m) && m.round === r && m.status === 'completed' && m.winnerId
+    );
     for (const m of completed) {
       result = propagateWinner(result, m);
     }
-    // Auto-advance any next-round match that now has exactly one real entrant
     result = result.map((m) => {
-      if (m.round !== r + 1 || m.status === 'completed') return m;
+      if (!inScope(m) || m.round !== r + 1 || m.status === 'completed') return m;
       if (m.entrant1Id && !m.entrant2Id) {
         return { ...m, winnerId: m.entrant1Id, status: 'completed' as const };
       }
@@ -221,6 +242,172 @@ function applyByes(matches: TournamentMatch[]): TournamentMatch[] {
   return result;
 }
 
+// ─── Group Stage ──────────────────────────────────────────────────────────────
+
+/**
+ * Determines how many groups to create based on team count.
+ * Always returns a power of 2 for clean playoff brackets.
+ * Targets group sizes of 3–5 teams.
+ */
+export function determineGroupCount(n: number): number {
+  if (n < 4) return 1;
+  if (n <= 8) return 2;   // 2 groups of 2–4
+  if (n <= 16) return 4;  // 4 groups of 2–4
+  return 8;               // 8 groups of 2–4
+}
+
+/**
+ * Generates a group-stage tournament:
+ * - Teams are randomly shuffled and split into groups.
+ * - Each group plays a full round-robin.
+ * - Group winners advance to a single-elimination playoff.
+ * - Number of groups / playoff size is based on team count.
+ */
+function generateGroupStage(tournament: Tournament): Tournament {
+  const ids = shuffle(getEntrantIds(tournament));
+  const n = ids.length;
+  const numGroups = determineGroupCount(n);
+
+  // Distribute teams into groups (round-robin distribution for even-ish sizes)
+  const groups: TournamentGroup[] = Array.from({ length: numGroups }, (_, g) => ({
+    id: uid(),
+    name: `Group ${String.fromCharCode(65 + g)}`, // A, B, C, D…
+    entrantIds: [],
+  }));
+
+  ids.forEach((id, i) => groups[i % numGroups].entrantIds.push(id));
+
+  const matches: TournamentMatch[] = [];
+
+  // Round-robin within each group
+  for (const group of groups) {
+    matches.push(...generateRoundRobinForIds(group.entrantIds, group.id));
+  }
+
+  // Empty playoff bracket (winners TBD)
+  const playoffMatches = generatePlayoffBracket(numGroups);
+  matches.push(...playoffMatches);
+
+  return { ...tournament, groups, matches, status: 'active' };
+}
+
+/** Generates an empty single-elimination playoff bracket for N group winners. */
+function generatePlayoffBracket(numGroups: number): TournamentMatch[] {
+  const bracketSize = nextPowerOf2(numGroups);
+  const matches: TournamentMatch[] = [];
+  let round = 1;
+  let matchesInRound = bracketSize / 2;
+
+  for (let i = 0; i < matchesInRound; i++) {
+    const e1Idx = i * 2;
+    const e2Idx = i * 2 + 1;
+    const isBye1 = e1Idx >= numGroups;
+    const isBye2 = e2Idx >= numGroups;
+
+    let status: TournamentMatch['status'] = 'pending';
+    let winnerId: string | null = null;
+    if (isBye1 && isBye2) status = 'completed';
+
+    matches.push({
+      id: uid(),
+      round,
+      slot: i,
+      entrant1Id: null,
+      entrant2Id: null,
+      score1: null,
+      score2: null,
+      winnerId,
+      status,
+      phase: 'playoff',
+    });
+  }
+
+  matchesInRound /= 2;
+  round++;
+  while (matchesInRound >= 1) {
+    for (let i = 0; i < matchesInRound; i++) {
+      matches.push({
+        id: uid(),
+        round,
+        slot: i,
+        entrant1Id: null,
+        entrant2Id: null,
+        score1: null,
+        score2: null,
+        winnerId: null,
+        status: 'pending',
+        phase: 'playoff',
+      });
+    }
+    matchesInRound /= 2;
+    round++;
+  }
+
+  return matches;
+}
+
+/** Computes standings for a specific group. */
+export function computeGroupStandings(
+  tournament: Tournament,
+  groupId: string
+): RoundRobinStanding[] {
+  const group = tournament.groups?.find((g) => g.id === groupId);
+  if (!group) return [];
+
+  const map: Record<string, RoundRobinStanding> = {};
+  for (const id of group.entrantIds) {
+    map[id] = { entrantId: id, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 };
+  }
+
+  for (const m of tournament.matches) {
+    if (m.groupId !== groupId || m.status !== 'completed' || !m.entrant1Id || !m.entrant2Id) continue;
+    const s1 = m.score1 ?? 0;
+    const s2 = m.score2 ?? 0;
+    map[m.entrant1Id].pointsFor += s1;
+    map[m.entrant1Id].pointsAgainst += s2;
+    map[m.entrant2Id].pointsFor += s2;
+    map[m.entrant2Id].pointsAgainst += s1;
+    if (m.winnerId === m.entrant1Id) {
+      map[m.entrant1Id].wins++;
+      map[m.entrant2Id].losses++;
+    } else {
+      map[m.entrant2Id].wins++;
+      map[m.entrant1Id].losses++;
+    }
+  }
+
+  return Object.values(map).sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst);
+  });
+}
+
+/** Propagates a group winner into the correct playoff bracket slot. */
+function propagateGroupWinner(
+  matches: TournamentMatch[],
+  groups: TournamentGroup[],
+  groupIdx: number,
+  winnerId: string
+): TournamentMatch[] {
+  const playoffSlot = Math.floor(groupIdx / 2);
+  const isFirst = groupIdx % 2 === 0;
+
+  let result = matches.map((m) => {
+    if (m.phase === 'playoff' && m.round === 1 && m.slot === playoffSlot) {
+      return {
+        ...m,
+        entrant1Id: isFirst ? winnerId : m.entrant1Id,
+        entrant2Id: isFirst ? m.entrant2Id : winnerId,
+      };
+    }
+    return m;
+  });
+
+  // After placing winner, check for playoff byes (if numGroups isn't power of 2)
+  result = applyByes(result, 'playoff');
+  return result;
+}
+
 // ─── Standings ────────────────────────────────────────────────────────────────
 
 export function computeStandings(tournament: Tournament): RoundRobinStanding[] {
@@ -231,6 +418,8 @@ export function computeStandings(tournament: Tournament): RoundRobinStanding[] {
   }
 
   for (const m of tournament.matches) {
+    // For group-stage, only count group phase matches
+    if (tournament.format === 'group-stage' && m.phase !== 'group') continue;
     if (m.status !== 'completed' || !m.entrant1Id || !m.entrant2Id) continue;
     const s1 = m.score1 ?? 0;
     const s2 = m.score2 ?? 0;
@@ -282,37 +471,43 @@ export function createEmptyTournament(
   };
 }
 
-export function addPlayer(tournament: Tournament, name: string, skillLevel: TournamentPlayer['skillLevel']): Tournament {
+export function addPlayer(
+  tournament: Tournament,
+  name: string,
+  skillLevel: TournamentPlayer['skillLevel']
+): Tournament {
   const player: TournamentPlayer = { id: uid(), name, skillLevel };
-  const players = [...tournament.players, player];
-
-  // Auto-create team for doubles if in doubles mode
-  let teams = tournament.teams;
-  if (tournament.matchType === 'doubles') {
-    // Teams are managed separately
-  }
-
-  return { ...tournament, players };
+  return { ...tournament, players: [...tournament.players, player] };
 }
 
-export function addTeam(tournament: Tournament, name: string, playerIds: string[]): Tournament {
+export function addTeam(
+  tournament: Tournament,
+  name: string,
+  playerIds: string[]
+): Tournament {
   const team: TournamentTeam = { id: uid(), name, playerIds };
   return { ...tournament, teams: [...tournament.teams, team] };
 }
 
-export function generateSchedule(tournament: Tournament): Tournament {
+export function generateSchedule(
+  tournament: Tournament,
+  orderedIds?: string[]
+): Tournament {
   let matches: TournamentMatch[];
+
   if (tournament.format === 'round-robin') {
     matches = generateRoundRobin(tournament);
-  } else {
-    matches = generateSingleElimination(tournament);
-    // Add 3rd place match in the final round alongside the final
+    return { ...tournament, matches, status: 'active' };
+  }
+
+  if (tournament.format === 'single-elimination') {
+    matches = generateSingleElimination(tournament, orderedIds);
     if (tournament.include3rdPlace && matches.length > 0) {
       const finalRound = Math.max(...matches.map((m) => m.round));
       matches.push({
         id: uid(),
         round: finalRound,
-        slot: 1, // slot 0 = final, slot 1 = 3rd place
+        slot: 1,
         entrant1Id: null,
         entrant2Id: null,
         score1: null,
@@ -322,8 +517,11 @@ export function generateSchedule(tournament: Tournament): Tournament {
         is3rdPlace: true,
       });
     }
+    return { ...tournament, matches, status: 'active' };
   }
-  return { ...tournament, matches, status: 'active' };
+
+  // group-stage
+  return generateGroupStage(tournament);
 }
 
 export function recordScore(
@@ -341,11 +539,36 @@ export function recordScore(
     return { ...m, score1, score2, winnerId, status: 'completed' as const };
   });
 
-  // Propagate winner for single-elimination, then auto-advance any resulting byes
   if (tournament.format === 'single-elimination') {
     const updated = matches.find((m) => m.id === matchId)!;
     matches = propagateWinner(matches, updated);
     matches = applyByes(matches);
+  }
+
+  if (tournament.format === 'group-stage') {
+    const updated = matches.find((m) => m.id === matchId)!;
+
+    if (updated.phase === 'playoff') {
+      matches = propagateWinner(matches, updated);
+      matches = applyByes(matches, 'playoff');
+    } else if (updated.phase === 'group' && updated.groupId && tournament.groups) {
+      // Check if the entire group is now complete
+      const groupMatches = matches.filter((m) => m.groupId === updated.groupId);
+      const allDone = groupMatches.every((m) => m.status === 'completed');
+      if (allDone) {
+        const group = tournament.groups.find((g) => g.id === updated.groupId);
+        if (group) {
+          const groupIdx = tournament.groups.indexOf(group);
+          // Find the group winner by standings
+          const tempTournament = { ...tournament, matches };
+          const standings = computeGroupStandings(tempTournament, group.id);
+          const winnerId = standings[0]?.entrantId;
+          if (winnerId) {
+            matches = propagateGroupWinner(matches, tournament.groups, groupIdx, winnerId);
+          }
+        }
+      }
+    }
   }
 
   return { ...tournament, matches };

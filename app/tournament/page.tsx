@@ -9,6 +9,7 @@ import type { MatchType, Tournament, TournamentFormat } from '../lib/types';
 const FORMAT_LABELS: Record<TournamentFormat, string> = {
   'round-robin': 'Round Robin',
   'single-elimination': 'Single Elimination',
+  'group-stage': 'Group Stage',
 };
 
 const STATUS_BADGE: Record<Tournament['status'], string> = {
@@ -82,6 +83,7 @@ function CreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t:
               >
                 <option value="round-robin">Round Robin</option>
                 <option value="single-elimination">Single Elimination</option>
+                <option value="group-stage">Group Stage</option>
               </select>
             </label>
 
