@@ -7,8 +7,9 @@ import { computeGroupStandings, computeStandings, getEntrantName } from '../../.
 import type { RoundRobinStanding, Tournament, TournamentMatch } from '../../../lib/types';
 
 function useNow() {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
@@ -433,7 +434,7 @@ export default function TournamentTVPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const timeStr = now?.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) ?? '--:--';
   const formatLabel =
     tournament.format === 'round-robin'
       ? 'Round Robin'

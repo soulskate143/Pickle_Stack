@@ -42,8 +42,9 @@ function getGridConfig(total: number): GridConfig {
 }
 
 function useNow() {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
@@ -55,6 +56,36 @@ function elapsed(startTime: number): string {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
   const s = (secs % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+}
+
+// ─── Animated pickleball ─────────────────────────────────────────────────────
+function PickleballAnimation({ courtId }: { courtId: number }) {
+  // Stagger duration + delay per court so they never all sync up
+  const dur = `${4.5 + (courtId % 4) * 0.9}s`;
+  const delay = `${-(courtId * 1.4)}s`;
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute pointer-events-none"
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        backgroundColor: '#f9c22e',
+        backgroundImage:
+          'radial-gradient(circle, rgba(0,0,0,0.28) 22%, transparent 22%)',
+        backgroundSize: '9px 9px',
+        boxShadow: '0 3px 10px rgba(0,0,0,0.5)',
+        opacity: 0.28,
+        transform: 'translate(-50%, -50%)',
+        animationName: 'pb-bounce',
+        animationDuration: dur,
+        animationDelay: delay,
+        animationTimingFunction: 'linear',
+        animationIterationCount: 'infinite',
+      }}
+    />
+  );
 }
 
 function gamesLabel(n: number) {
@@ -72,7 +103,7 @@ export default function OpenPlayTVPage() {
     return () => clearInterval(id);
   }, []);
 
-  if (!session) {
+  if (!session || !now) {
     return (
       <div className="flex-1 flex items-center justify-center text-white/30 text-3xl tracking-widest">
         LOADING…
@@ -187,7 +218,8 @@ export default function OpenPlayTVPage() {
 
                   {/* Court body */}
                   {playing ? (
-                    <div className="flex-1 flex flex-col justify-center px-6 py-4 gap-4">
+                    <div className="relative flex-1 flex flex-col justify-center px-6 py-4 gap-4">
+                      <PickleballAnimation courtId={court.id} />
 
                       {/* Team A */}
                       <div className="flex flex-col gap-1">
