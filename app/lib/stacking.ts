@@ -7,7 +7,14 @@ function pickPlayers(queue: QueuedPlayer[], mode: StackingMode): QueuedPlayer[] 
   if (queue.length < PLAYERS_PER_COURT) return null;
 
   if (mode === 'fifo') {
-    return queue.slice(0, PLAYERS_PER_COURT);
+    // Prioritize players with fewer games played; FIFO within same count
+    const sorted = [...queue].sort((a, b) => {
+      const ag = a.gamesPlayed ?? 0;
+      const bg = b.gamesPlayed ?? 0;
+      if (ag !== bg) return ag - bg;
+      return a.queuedAt - b.queuedAt;
+    });
+    return sorted.slice(0, PLAYERS_PER_COURT);
   }
 
   // Skill-matched: find 4 consecutive (by skill) players with minimal spread
@@ -69,11 +76,32 @@ export function endGame(
 
   let queue = [...session.queue];
   if (requeuePlayers) {
-    const requeued = finishedPlayers.map((p) => ({ ...p, queuedAt: Date.now() }));
+    const requeued = finishedPlayers.map((p) => ({
+      ...p,
+      gamesPlayed: (p.gamesPlayed ?? 0) + 1,
+      queuedAt: Date.now(),
+    }));
     queue = [...queue, ...requeued];
   }
 
   return { ...session, courts, queue, gameDurations };
+}
+
+/** Assign the next players from queue to a specific empty court */
+export function assignNextToCourt(session: OpenPlaySession, courtId: number): OpenPlaySession {
+  const court = session.courts.find((c) => c.id === courtId);
+  if (!court || court.game !== null) return session;
+
+  const players = pickPlayers(session.queue, session.stackingMode);
+  if (!players) return session;
+
+  const pickedIds = new Set(players.map((p) => p.id));
+  const queue = session.queue.filter((p) => !pickedIds.has(p.id));
+  const courts = session.courts.map((c) =>
+    c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
+  );
+
+  return { ...session, courts, queue };
 }
 
 /** Set court count — add or trim courts */

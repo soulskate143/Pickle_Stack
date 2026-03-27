@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { appendSessionLog, loadOpenPlay, loadPlayers, saveOpenPlay } from '../lib/storage';
-import { autoAssign, endGame, setCourtCount } from '../lib/stacking';
+import { assignNextToCourt, autoAssign, endGame, setCourtCount } from '../lib/stacking';
 import type { OpenPlaySession, PlayerProfile, QueuedPlayer, SessionLog, SkillLevel, StackingMode } from '../lib/types';
 import { SKILL_LABELS, SKILL_LEVELS } from '../lib/types';
 
@@ -53,11 +54,15 @@ function PickleballCourt({
   court,
   onEndGame,
   onDropPlayer,
+  onAssignNext,
+  canAssignNext,
   tick,
 }: {
   court: OpenPlaySession['courts'][number];
   onEndGame: (courtId: number, requeue: boolean) => void;
   onDropPlayer: (courtId: number, playerId: string) => void;
+  onAssignNext: (courtId: number) => void;
+  canAssignNext: boolean;
   tick: number;
 }) {
   const [dragOver, setDragOver] = useState(false);
@@ -108,9 +113,16 @@ function PickleballCourt({
           </div>
         )}
         {!playing && (
-          <span className="text-xs text-pb-text/40 italic">
-            {dragOver ? 'Drop to assign' : 'Available'}
-          </span>
+          canAssignNext && !dragOver
+            ? <button
+                onClick={() => onAssignNext(court.id)}
+                className="text-xs bg-pb-green hover:bg-pb-green/80 text-white font-semibold px-3 py-1 rounded-lg transition-colors"
+              >
+                Assign Next →
+              </button>
+            : <span className="text-xs text-pb-text/40 italic">
+                {dragOver ? 'Drop to assign' : 'Available'}
+              </span>
         )}
       </div>
 
@@ -150,8 +162,11 @@ function PickleballCourt({
                 <text x={pos.x} y={pos.y} fontSize={11} fontWeight="bold" fill="white" textAnchor="middle" dominantBaseline="middle">
                   {p.name.charAt(0).toUpperCase()}
                 </text>
-                <text x={pos.x} y={pos.y + 24} fontSize={8} fill="white" textAnchor="middle">
+                <text x={pos.x} y={pos.y + 22} fontSize={8} fill="white" textAnchor="middle">
                   {truncate(p.name, 10)}
+                </text>
+                <text x={pos.x} y={pos.y + 32} fontSize={7} fill="rgba(255,255,255,0.5)" textAnchor="middle">
+                  {(p.gamesPlayed ?? 0) === 0 ? 'new' : `${p.gamesPlayed} game${p.gamesPlayed === 1 ? '' : 's'}`}
                 </text>
               </g>
             );
@@ -227,6 +242,10 @@ function OnDeckPanel({
       >
         <span className="opacity-60">{index}</span>
         {player.name}
+        {(player.gamesPlayed ?? 0) === 0
+          ? <span className="text-[9px] opacity-70">new</span>
+          : <span className="text-[9px] opacity-60">{player.gamesPlayed} game{player.gamesPlayed === 1 ? '' : 's'}</span>
+        }
         <button
           onClick={() => setReplacingId(isReplacing ? null : player.id)}
           title={isReplacing ? 'Cancel' : 'Replace this player'}
@@ -370,7 +389,14 @@ function QueueList({
               <span className="text-xs text-pb-text/30 leading-none mt-0.5">{formatWait(waitMs)}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm truncate">{p.name}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm truncate">{p.name}</span>
+                {(p.gamesPlayed ?? 0) === 0 ? (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-pb-green/20 text-pb-green shrink-0">New</span>
+                ) : (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-pb-text/10 text-pb-text/50 shrink-0">{p.gamesPlayed} game{p.gamesPlayed === 1 ? '' : 's'}</span>
+                )}
+              </div>
               <div className="text-xs text-pb-text/50">{SKILL_LABELS[p.skillLevel]}</div>
             </div>
             <button
@@ -603,7 +629,7 @@ export default function OpenPlayPage() {
     : 15 * 60 * 1000; // default 15 min
 
   function handleAddPlayer(name: string, skillLevel: SkillLevel) {
-    const player: QueuedPlayer = { id: uid(), name, skillLevel, queuedAt: Date.now() };
+    const player: QueuedPlayer = { id: uid(), name, skillLevel, queuedAt: Date.now(), gamesPlayed: 0 };
     update({ ...session!, queue: [...session!.queue, player] });
   }
 
@@ -617,6 +643,10 @@ export default function OpenPlayPage() {
 
   function handleAutoAssign() {
     update(autoAssign(session!));
+  }
+
+  function handleAssignNext(courtId: number) {
+    update(assignNextToCourt(session!, courtId));
   }
 
   function handleCourtCount(delta: number) {
@@ -771,6 +801,15 @@ export default function OpenPlayPage() {
             📲 Kiosk QR
           </button>
 
+          <Link
+            href="/tv/open-play"
+            target="_blank"
+            className="text-pb-text/50 hover:text-pb-green text-sm font-medium px-2 transition-colors"
+            title="Open TV display"
+          >
+            📺 TV View
+          </Link>
+
           <button
             onClick={() => setHistoryOpen(true)}
             className="text-pb-text/50 hover:text-pb-green text-sm font-medium px-2 transition-colors"
@@ -826,6 +865,8 @@ export default function OpenPlayPage() {
                 court={court}
                 onEndGame={handleEndGame}
                 onDropPlayer={handleDropPlayer}
+                onAssignNext={handleAssignNext}
+                canAssignNext={session.queue.length >= 4}
                 tick={tick}
               />
             ))}

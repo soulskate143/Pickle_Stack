@@ -26,6 +26,7 @@ export interface QueuedPlayer {
   name: string;
   skillLevel: SkillLevel;
   queuedAt: number; // timestamp
+  gamesPlayed: number; // games completed this session
 }
 
 export interface ActiveGame {

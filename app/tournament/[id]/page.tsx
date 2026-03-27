@@ -1300,6 +1300,14 @@ export default function TournamentDetailPage({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href={`/tv/tournament/${tournament.id}`}
+              target="_blank"
+              className="border border-pb-border hover:border-pb-green text-pb-text/60 hover:text-pb-green font-medium text-sm px-3 py-2 rounded-lg transition-colors"
+              title="Open TV display"
+            >
+              📺 TV View
+            </Link>
             <button
               onClick={() => window.print()}
               className="border border-pb-border hover:border-pb-green text-pb-text/60 hover:text-pb-green font-medium text-sm px-3 py-2 rounded-lg transition-colors"
