@@ -61,7 +61,7 @@ function elapsed(startTime: number): string {
 
 function gamesLabel(n: number) {
   if (n === 0) return { text: 'NEW', cls: 'text-emerald-400' };
-  return { text: `${n}g`, cls: 'text-zinc-500' };
+  return { text: `${n} game${n === 1 ? '' : 's'}`, cls: 'text-zinc-500' };
 }
 
 export default function OpenPlayTVPage() {
@@ -73,6 +73,7 @@ export default function OpenPlayTVPage() {
     const id = setInterval(() => setSession(loadOpenPlay()), 5000);
     return () => clearInterval(id);
   }, []);
+
 
   if (!session || !now) {
     return (
@@ -96,6 +97,21 @@ export default function OpenPlayTVPage() {
 
   const courtCount = session.courts.length;
   const grid = getGridConfig(courtCount);
+
+  // Scale court content based on how many courts are shown
+  const tier = courtCount === 1 ? 4 : courtCount === 2 ? 3 : courtCount <= 4 ? 2 : 1;
+  const sz = {
+    body:      tier >= 3 ? 'px-8 py-8 gap-8'   : tier === 2 ? 'px-5 py-4 gap-3' : 'px-5 py-3 gap-2',
+    name:      tier === 4 ? 'text-5xl' : tier === 3 ? 'text-4xl' : tier === 2 ? 'text-2xl' : 'text-xl',
+    games:     tier >= 3 ? 'text-lg'  : 'text-xs',
+    teamLabel: tier >= 3 ? 'text-sm'  : 'text-[10px]',
+    dot:       tier >= 3 ? 'w-3 h-3'  : 'w-2 h-2',
+    pl:        tier >= 3 ? 'pl-5'     : 'pl-3.5',
+    vs:        tier >= 3 ? 'text-base': 'text-xs',
+    header:    tier >= 3 ? 'text-3xl' : 'text-xl',
+    timer:     tier >= 3 ? 'text-3xl' : 'text-xl',
+    open:      tier >= 3 ? 'text-6xl' : 'text-3xl',
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -174,11 +190,11 @@ export default function OpenPlayTVPage() {
                         : 'bg-zinc-800'
                     }`}
                   >
-                    <span className="font-black text-xl uppercase tracking-[0.2em] text-white">
+                    <span className={`font-black ${sz.header} uppercase tracking-[0.2em] text-white`}>
                       Court {court.id}
                     </span>
                     {playing && (
-                      <span className={`font-mono text-xl font-bold tabular-nums text-white ${isOvertime ? 'animate-pulse' : ''}`}>
+                      <span className={`font-mono ${sz.timer} font-bold tabular-nums text-white ${isOvertime ? 'animate-pulse' : ''}`}>
                         ⏱ {elapsed(court.game!.startTime)}{isOvertime ? ' ⚠️' : ''}
                       </span>
                     )}
@@ -189,21 +205,21 @@ export default function OpenPlayTVPage() {
 
                   {/* Court body */}
                   {playing ? (
-                    <div className="flex-1 flex flex-col justify-center px-5 py-3 gap-2 min-h-0 overflow-hidden">
+                    <div className={`flex-1 flex flex-col justify-center min-h-0 overflow-hidden ${sz.body}`}>
 
                       {/* Team A */}
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
-                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-400">Team A</span>
+                          <span className={`${sz.dot} rounded-full bg-orange-500 shrink-0`} />
+                          <span className={`${sz.teamLabel} font-bold uppercase tracking-[0.2em] text-orange-400`}>Team A</span>
                         </div>
-                        <div className="flex flex-col pl-3.5">
+                        <div className={`flex flex-col ${sz.pl}`}>
                           {teamA.map((p) => {
                             const g = gamesLabel(p.gamesPlayed ?? 0);
                             return (
                               <div key={p.id} className="flex items-baseline gap-2">
-                                <span className="text-xl font-black text-white leading-snug">{p.name}</span>
-                                <span className={`text-xs font-bold ${g.cls}`}>{g.text}</span>
+                                <span className={`${sz.name} font-black text-white leading-snug`}>{p.name}</span>
+                                <span className={`${sz.games} font-bold ${g.cls}`}>{g.text}</span>
                               </div>
                             );
                           })}
@@ -213,23 +229,23 @@ export default function OpenPlayTVPage() {
                       {/* VS divider */}
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-px bg-zinc-700" />
-                        <span className="text-zinc-600 text-xs font-black tracking-[0.3em]">VS</span>
+                        <span className={`text-zinc-600 ${sz.vs} font-black tracking-[0.3em]`}>VS</span>
                         <div className="flex-1 h-px bg-zinc-700" />
                       </div>
 
                       {/* Team B */}
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
-                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400">Team B</span>
+                          <span className={`${sz.dot} rounded-full bg-cyan-400 shrink-0`} />
+                          <span className={`${sz.teamLabel} font-bold uppercase tracking-[0.2em] text-cyan-400`}>Team B</span>
                         </div>
-                        <div className="flex flex-col pl-3.5">
+                        <div className={`flex flex-col ${sz.pl}`}>
                           {teamB.map((p) => {
                             const g = gamesLabel(p.gamesPlayed ?? 0);
                             return (
                               <div key={p.id} className="flex items-baseline gap-2">
-                                <span className="text-xl font-black text-white leading-snug">{p.name}</span>
-                                <span className={`text-xs font-bold ${g.cls}`}>{g.text}</span>
+                                <span className={`${sz.name} font-black text-white leading-snug`}>{p.name}</span>
+                                <span className={`${sz.games} font-bold ${g.cls}`}>{g.text}</span>
                               </div>
                             );
                           })}
@@ -239,7 +255,7 @@ export default function OpenPlayTVPage() {
                     </div>
                   ) : (
                     <div className="flex-1 flex items-center justify-center">
-                      <span className="text-zinc-700 text-3xl font-black uppercase tracking-[0.4em]">OPEN</span>
+                      <span className={`text-zinc-700 ${sz.open} font-black uppercase tracking-[0.4em]`}>OPEN</span>
                     </div>
                   )}
                 </div>

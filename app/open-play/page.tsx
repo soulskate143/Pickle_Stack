@@ -165,9 +165,6 @@ function PickleballCourt({
                 <text x={pos.x} y={pos.y + 22} fontSize={8} fill="white" textAnchor="middle">
                   {truncate(p.name, 10)}
                 </text>
-                <text x={pos.x} y={pos.y + 32} fontSize={7} fill="rgba(255,255,255,0.5)" textAnchor="middle">
-                  {(p.gamesPlayed ?? 0) === 0 ? 'new' : `${p.gamesPlayed} game${p.gamesPlayed === 1 ? '' : 's'}`}
-                </text>
               </g>
             );
           })}
@@ -603,9 +600,21 @@ export default function OpenPlayPage() {
   const [tick, setTick] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
 
   useEffect(() => {
     setSession(loadOpenPlay());
+    // Poll every 2s to stay in sync with TV/kiosk changes
+    const poll = setInterval(() => setSession(loadOpenPlay()), 2000);
+    // Also sync immediately via storage event (cross-tab)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pb_open_play') setSession(loadOpenPlay());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -638,7 +647,9 @@ export default function OpenPlayPage() {
   }
 
   function handleEndGame(courtId: number, requeue: boolean) {
-    update(endGame(session!, courtId, requeue));
+    let next = endGame(session!, courtId, requeue);
+    if (autoAssignEnabled) next = autoAssign(next);
+    update(next);
   }
 
   function handleAutoAssign() {
@@ -788,9 +799,17 @@ export default function OpenPlayPage() {
           <button
             onClick={handleAutoAssign}
             disabled={session.queue.length < 4 && openCourts === 0}
-            className="bg-pb-green hover:bg-pb-green/80 disabled:opacity-40 text-white font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-2 bg-pb-green hover:bg-pb-green/80 disabled:opacity-40 text-white font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors"
           >
-            ⚡ Auto-Assign
+            <span
+              onClick={(e) => { e.stopPropagation(); setAutoAssignEnabled((v) => !v); }}
+              className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center shrink-0 cursor-pointer ${
+                autoAssignEnabled ? 'bg-white border-white' : 'border-white/60 bg-transparent'
+              }`}
+            >
+              {autoAssignEnabled && <span className="text-pb-green text-[10px] leading-none font-black">✓</span>}
+            </span>
+            Auto-Assign
           </button>
 
           <button
