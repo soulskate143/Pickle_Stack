@@ -53,6 +53,18 @@ html.dark textarea {
   color-scheme: dark;
 }
 
+/* ── Pickleball TV bounce animation ───────────────────────────── */
+@keyframes pb-bounce {
+  0%   { top: 14%; left: 12%; }
+  13%  { top:  7%; left: 74%; }
+  27%  { top: 38%; left: 83%; }
+  40%  { top: 76%; left: 70%; }
+  54%  { top: 82%; left: 28%; }
+  68%  { top: 62%; left:  9%; }
+  82%  { top: 26%; left: 20%; }
+  100% { top: 14%; left: 12%; }
+}
+
 @media print {
   header, footer, nav, .no-print { display: none !important; }
   body { background: white; color: black; }

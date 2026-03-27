@@ -58,35 +58,6 @@ function elapsed(startTime: number): string {
   return `${m}:${s}`;
 }
 
-// ─── Animated pickleball ─────────────────────────────────────────────────────
-function PickleballAnimation({ courtId }: { courtId: number }) {
-  // Stagger duration + delay per court so they never all sync up
-  const dur = `${4.5 + (courtId % 4) * 0.9}s`;
-  const delay = `${-(courtId * 1.4)}s`;
-  return (
-    <div
-      aria-hidden="true"
-      className="absolute pointer-events-none"
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: '50%',
-        backgroundColor: '#f9c22e',
-        backgroundImage:
-          'radial-gradient(circle, rgba(0,0,0,0.28) 22%, transparent 22%)',
-        backgroundSize: '9px 9px',
-        boxShadow: '0 3px 10px rgba(0,0,0,0.5)',
-        opacity: 0.28,
-        transform: 'translate(-50%, -50%)',
-        animationName: 'pb-bounce',
-        animationDuration: dur,
-        animationDelay: delay,
-        animationTimingFunction: 'linear',
-        animationIterationCount: 'infinite',
-      }}
-    />
-  );
-}
 
 function gamesLabel(n: number) {
   if (n === 0) return { text: 'NEW', cls: 'text-emerald-400' };
@@ -218,21 +189,20 @@ export default function OpenPlayTVPage() {
 
                   {/* Court body */}
                   {playing ? (
-                    <div className="relative flex-1 flex flex-col justify-center px-6 py-4 gap-4">
-                      <PickleballAnimation courtId={court.id} />
+                    <div className="flex-1 flex flex-col justify-center px-5 py-3 gap-2 min-h-0 overflow-hidden">
 
                       {/* Team A */}
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shrink-0" />
-                          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-400">Team A</span>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-400">Team A</span>
                         </div>
-                        <div className="flex flex-col gap-0.5 pl-4">
+                        <div className="flex flex-col pl-3.5">
                           {teamA.map((p) => {
                             const g = gamesLabel(p.gamesPlayed ?? 0);
                             return (
                               <div key={p.id} className="flex items-baseline gap-2">
-                                <span className="text-2xl font-black text-white leading-tight">{p.name}</span>
+                                <span className="text-xl font-black text-white leading-snug">{p.name}</span>
                                 <span className={`text-xs font-bold ${g.cls}`}>{g.text}</span>
                               </div>
                             );
@@ -241,24 +211,24 @@ export default function OpenPlayTVPage() {
                       </div>
 
                       {/* VS divider */}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <div className="flex-1 h-px bg-zinc-700" />
-                        <span className="text-zinc-600 text-sm font-black tracking-[0.3em]">VS</span>
+                        <span className="text-zinc-600 text-xs font-black tracking-[0.3em]">VS</span>
                         <div className="flex-1 h-px bg-zinc-700" />
                       </div>
 
                       {/* Team B */}
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0" />
-                          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-400">Team B</span>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
+                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400">Team B</span>
                         </div>
-                        <div className="flex flex-col gap-0.5 pl-4">
+                        <div className="flex flex-col pl-3.5">
                           {teamB.map((p) => {
                             const g = gamesLabel(p.gamesPlayed ?? 0);
                             return (
                               <div key={p.id} className="flex items-baseline gap-2">
-                                <span className="text-2xl font-black text-white leading-tight">{p.name}</span>
+                                <span className="text-xl font-black text-white leading-snug">{p.name}</span>
                                 <span className={`text-xs font-bold ${g.cls}`}>{g.text}</span>
                               </div>
                             );
