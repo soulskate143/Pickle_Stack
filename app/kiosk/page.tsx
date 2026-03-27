@@ -77,6 +77,7 @@ export default function KioskPage() {
       name: player.name,
       skillLevel: player.skillLevel,
       queuedAt: Date.now(),
+      gamesPlayed: 0,
     };
     const updated: OpenPlaySession = { ...fresh, queue: [...fresh.queue, queued] };
     saveOpenPlay(updated);
