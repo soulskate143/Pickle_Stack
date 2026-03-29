@@ -92,8 +92,14 @@ export default function OpenPlayTVPage() {
 
   const activeCourts = session.courts.filter((c) => c.game !== null).length;
   const queueCount = session.queue.length;
-  const nextPair1 = session.queue.slice(0, 4);
-  const nextPair2 = session.queue.slice(4, 8);
+  const sortedQueue = [...session.queue].sort((a, b) => {
+    const ag = a.gamesPlayed ?? 0;
+    const bg = b.gamesPlayed ?? 0;
+    if (ag !== bg) return ag - bg;
+    return a.queuedAt - b.queuedAt;
+  });
+  const nextPair1 = sortedQueue.slice(0, 4);
+  const nextPair2 = sortedQueue.slice(4, 8);
 
   const courtCount = session.courts.length;
   const grid = getGridConfig(courtCount);

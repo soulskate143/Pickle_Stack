@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { appendSessionLog, loadOpenPlay, loadPlayers, saveOpenPlay } from '../lib/storage';
-import { assignNextToCourt, autoAssign, endGame, setCourtCount } from '../lib/stacking';
+import { assignNextToCourt, autoAssign, endGame, pickPlayers, setCourtCount } from '../lib/stacking';
 import type { OpenPlaySession, PlayerProfile, QueuedPlayer, SessionLog, SkillLevel, StackingMode } from '../lib/types';
 import { SKILL_LABELS, SKILL_LEVELS } from '../lib/types';
 
@@ -208,9 +208,13 @@ function PickleballCourt({
 function OnDeckPanel({
   queue,
   onReplace,
+  hasOverride,
+  onClearOverride,
 }: {
   queue: QueuedPlayer[];
   onReplace: (skippedId: string, withId: string | 'auto') => void;
+  hasOverride: boolean;
+  onClearOverride: () => void;
 }) {
   const [replacingId, setReplacingId] = useState<string | null>(null);
 
@@ -255,10 +259,22 @@ function OnDeckPanel({
   }
 
   return (
-    <div className="rounded-xl border-2 border-pb-green bg-pb-green/5 p-4 mb-6">
+    <div className={`rounded-xl border-2 p-4 mb-6 ${hasOverride ? 'border-orange-400 bg-orange-400/5' : 'border-pb-green bg-pb-green/5'}`}>
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm font-bold uppercase tracking-widest text-pb-green">🎯 On Deck</span>
-        <span className="text-xs text-pb-text/50">— hover a name to replace</span>
+        <span className={`text-sm font-bold uppercase tracking-widest ${hasOverride ? 'text-orange-500' : 'text-pb-green'}`}>🎯 On Deck</span>
+        {hasOverride ? (
+          <>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-500 uppercase tracking-wide">Manual</span>
+            <button
+              onClick={onClearOverride}
+              className="text-xs text-pb-text/40 hover:text-pb-green transition-colors ml-auto"
+            >
+              ↺ Reset to Auto
+            </button>
+          </>
+        ) : (
+          <span className="text-xs text-pb-text/50">— hover a name to replace</span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -347,13 +363,13 @@ function formatWait(ms: number): string {
 function QueueList({
   queue,
   onRemove,
-  activeCourts,
+  courts,
   courtCount,
   avgGameMs,
 }: {
   queue: QueuedPlayer[];
   onRemove: (id: string) => void;
-  activeCourts: number;
+  courts: OpenPlaySession['courts'];
   courtCount: number;
   avgGameMs: number;
 }) {
@@ -365,15 +381,29 @@ function QueueList({
     );
   }
 
-  const effectiveCourts = Math.max(activeCourts > 0 ? activeCourts : courtCount, 1);
-  const perCourt = 4; // players per game
+  // Remaining ms for each active court, sorted soonest-finish first
+  const now = Date.now();
+  const remainingMs = courts
+    .filter((c) => c.game !== null)
+    .map((c) => Math.max(0, avgGameMs - (now - c.game!.startTime)))
+    .sort((a, b) => a - b);
+  const effectiveCourts = Math.max(remainingMs.length > 0 ? remainingMs.length : courtCount, 1);
 
   return (
     <ol className="space-y-2">
       {queue.map((p, i) => {
-        // Estimated wait: ceil position in groups of (courts * 4), times avg game
-        const gamesAway = Math.ceil((i + 1) / (effectiveCourts * perCourt));
-        const waitMs = gamesAway * avgGameMs;
+        // How many court-finishes does this player need before they play?
+        const finishesNeeded = Math.ceil((i + 1) / 4);
+        let waitMs: number;
+        if (finishesNeeded <= remainingMs.length) {
+          // Can use actual remaining time of the Nth-soonest court
+          waitMs = remainingMs[finishesNeeded - 1];
+        } else {
+          // Beyond currently active courts: base off last known finish + extra cycles
+          const extra = finishesNeeded - remainingMs.length;
+          const base = remainingMs.length > 0 ? remainingMs[remainingMs.length - 1] : 0;
+          waitMs = base + (extra * avgGameMs) / effectiveCourts;
+        }
         return (
           <li
             key={p.id}
@@ -601,6 +631,7 @@ export default function OpenPlayPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
+  const [deckOverride, setDeckOverride] = useState<string[] | null>(null);
 
   useEffect(() => {
     setSession(loadOpenPlay());
@@ -633,6 +664,34 @@ export default function OpenPlayPage() {
 
   const activeCourts = session.courts.filter((c) => c.game !== null).length;
   const openCourts = session.courts.filter((c) => c.game === null).length;
+
+  // Compute auto pairs from pickPlayers
+  const autoPair1 = pickPlayers(session.queue, session.stackingMode) ?? [];
+  const autoPair1Ids = new Set(autoPair1.map((p) => p.id));
+  const afterAutoPair1 = session.queue.filter((p) => !autoPair1Ids.has(p.id));
+  const autoPair2 = pickPlayers(afterAutoPair1, session.stackingMode) ?? [];
+
+  // Apply manual deck override if set and still valid
+  const validOverride = deckOverride?.filter((id) => session.queue.some((p) => p.id === id)) ?? null;
+  const overrideActive = validOverride !== null && validOverride.length >= 4;
+  const pair1: QueuedPlayer[] = overrideActive
+    ? validOverride.slice(0, 4).map((id) => session.queue.find((p) => p.id === id)!)
+    : autoPair1;
+  const pair2: QueuedPlayer[] = overrideActive
+    ? validOverride.slice(4, 8).map((id) => session.queue.find((p) => p.id === id)!).filter(Boolean)
+    : autoPair2;
+
+  const pair1Ids = new Set(pair1.map((p) => p.id));
+  const pair2Ids = new Set(pair2.map((p) => p.id));
+  const rest = session.queue
+    .filter((p) => !pair1Ids.has(p.id) && !pair2Ids.has(p.id))
+    .sort((a, b) => {
+      const ag = a.gamesPlayed ?? 0;
+      const bg = b.gamesPlayed ?? 0;
+      if (ag !== bg) return ag - bg;
+      return a.queuedAt - b.queuedAt;
+    });
+  const sortedQueue = [...pair1, ...pair2, ...rest];
   const avgGameMs = session.gameDurations.length > 0
     ? session.gameDurations.reduce((a, b) => a + b, 0) / session.gameDurations.length
     : 15 * 60 * 1000; // default 15 min
@@ -648,16 +707,54 @@ export default function OpenPlayPage() {
 
   function handleEndGame(courtId: number, requeue: boolean) {
     let next = endGame(session!, courtId, requeue);
-    if (autoAssignEnabled) next = autoAssign(next);
+    if (autoAssignEnabled) {
+      if (overrideActive && pair1.length === 4) {
+        // Respect the manual deck override — assign override pair1 to the freed court
+        const players = pair1.filter((p) => next.queue.some((q) => q.id === p.id));
+        if (players.length === 4) {
+          const pickedIds = new Set(players.map((p) => p.id));
+          const queue = next.queue.filter((p) => !pickedIds.has(p.id));
+          const courts = next.courts.map((c) =>
+            c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
+          );
+          const remaining = (validOverride ?? []).slice(4);
+          setDeckOverride(remaining.length >= 4 ? remaining : null);
+          next = { ...next, courts, queue };
+        } else {
+          // Override players no longer available, fall back to auto
+          next = autoAssign(next);
+          setDeckOverride(null);
+        }
+      } else {
+        next = autoAssign(next);
+      }
+    }
     update(next);
   }
 
   function handleAutoAssign() {
+    setDeckOverride(null);
     update(autoAssign(session!));
   }
 
   function handleAssignNext(courtId: number) {
-    update(assignNextToCourt(session!, courtId));
+    if (overrideActive && pair1.length === 4) {
+      const players = pair1;
+      const pickedIds = new Set(players.map((p) => p.id));
+      const queue = session!.queue.filter((p) => !pickedIds.has(p.id));
+      const courts = session!.courts.map((c) =>
+        c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
+      );
+      const remaining = validOverride!.slice(4);
+      setDeckOverride(remaining.length >= 4 ? remaining : null);
+      let next: OpenPlaySession = { ...session!, courts, queue };
+      if (autoAssignEnabled) next = autoAssign(next);
+      update(next);
+    } else {
+      let next = assignNextToCourt(session!, courtId);
+      if (autoAssignEnabled) next = autoAssign(next);
+      update(next);
+    }
   }
 
   function handleCourtCount(delta: number) {
@@ -669,6 +766,38 @@ export default function OpenPlayPage() {
   }
 
   function handleReplacePlayer(skippedId: string, withId: string | 'auto') {
+    const deckIds = [...pair1.map((p) => p.id), ...pair2.map((p) => p.id)];
+    const isDeckPlayer = deckIds.includes(skippedId);
+
+    if (isDeckPlayer) {
+      const currentOverride = overrideActive ? validOverride! : deckIds;
+      let replacementId: string;
+      if (withId === 'auto') {
+        const deckSet = new Set(currentOverride);
+        const next = session!.queue.find((p) => !deckSet.has(p.id));
+        if (!next) return;
+        replacementId = next.id;
+      } else {
+        replacementId = withId;
+      }
+
+      const skippedIdx = currentOverride.indexOf(skippedId);
+      const replacementIdx = currentOverride.indexOf(replacementId);
+      const newOverride = [...currentOverride];
+
+      if (replacementIdx !== -1) {
+        // Replacement is also in the deck — swap their positions so deck stays 8 items
+        newOverride[skippedIdx] = replacementId;
+        newOverride[replacementIdx] = skippedId;
+      } else {
+        // Replacement is from the rest of the queue — just put them in the skipped slot
+        newOverride[skippedIdx] = replacementId;
+      }
+      setDeckOverride(newOverride);
+      return;
+    }
+
+    // Non-deck player: reorder in the raw queue
     const queue = session!.queue;
     const skipped = queue.find((p) => p.id === skippedId);
     if (!skipped) return;
@@ -871,7 +1000,12 @@ export default function OpenPlayPage() {
 
       <p className="text-xs text-pb-text/30 mb-6">Drag a player from the queue onto an empty court to assign them directly.</p>
 
-      <OnDeckPanel queue={session.queue} onReplace={handleReplacePlayer} />
+      <OnDeckPanel
+        queue={sortedQueue}
+        onReplace={handleReplacePlayer}
+        hasOverride={overrideActive}
+        onClearOverride={() => setDeckOverride(null)}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Courts grid */}
@@ -904,9 +1038,9 @@ export default function OpenPlayPage() {
               Queue ({session.queue.length})
             </h2>
             <QueueList
-              queue={session.queue}
+              queue={sortedQueue}
               onRemove={handleRemovePlayer}
-              activeCourts={activeCourts}
+              courts={session.courts}
               courtCount={session.courtCount}
               avgGameMs={avgGameMs}
             />

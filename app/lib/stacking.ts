@@ -3,7 +3,7 @@ import type { Court, OpenPlaySession, QueuedPlayer, StackingMode } from './types
 const PLAYERS_PER_COURT = 4; // doubles
 
 /** Pick the next 4 players from queue using the selected mode */
-function pickPlayers(queue: QueuedPlayer[], mode: StackingMode): QueuedPlayer[] | null {
+export function pickPlayers(queue: QueuedPlayer[], mode: StackingMode): QueuedPlayer[] | null {
   if (queue.length < PLAYERS_PER_COURT) return null;
 
   if (mode === 'fifo') {
@@ -14,6 +14,18 @@ function pickPlayers(queue: QueuedPlayer[], mode: StackingMode): QueuedPlayer[] 
       if (ag !== bg) return ag - bg;
       return a.queuedAt - b.queuedAt;
     });
+
+    // Distribute new/lowest-tier players: cap at 2 per group so they mix
+    // with experienced players instead of always clustering together.
+    const minGames = sorted[0]?.gamesPlayed ?? 0;
+    const minTier = sorted.filter((p) => (p.gamesPlayed ?? 0) === minGames);
+    const rest = sorted.filter((p) => (p.gamesPlayed ?? 0) !== minGames);
+
+    if (minTier.length >= 2 && rest.length >= 2) {
+      // Enough of both tiers — mix 2 lowest + 2 next-in-line
+      return [...minTier.slice(0, 2), ...rest.slice(0, 2)];
+    }
+
     return sorted.slice(0, PLAYERS_PER_COURT);
   }
 
