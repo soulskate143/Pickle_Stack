@@ -94,33 +94,64 @@ function WebcamFeed({ deviceId }: { deviceId?: string }) {
 
 // ─── URL feed ─────────────────────────────────────────────────────────────────
 
+// NEXT_PUBLIC_RTSP_PROXY: set this in Vercel env vars to http://localhost:3001
+// when running the standalone proxy script on the Pi.
+// Leave unset when self-hosting Next.js on the Pi (uses built-in /api/stream).
+const RTSP_PROXY = process.env.NEXT_PUBLIC_RTSP_PROXY ?? '';
+
+function getRtspSrc(rtspUrl: string): string {
+  if (RTSP_PROXY) {
+    // Standalone proxy running on Pi (scripts/rtsp-proxy.js)
+    return `${RTSP_PROXY}/stream?url=${encodeURIComponent(rtspUrl)}`;
+  }
+  // Built-in Next.js API route (self-hosted next start on Pi)
+  return `/api/stream?url=${encodeURIComponent(rtspUrl)}`;
+}
+
 function UrlFeed({ url }: { url: string }) {
-  const [imgErr, setImgErr] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  // Heuristic: treat as MJPEG image stream if no recognisable video extension
+  const isRtsp = url.toLowerCase().startsWith('rtsp://');
   const videoExts = ['.mp4', '.webm', '.ogg', '.m3u8', '.mov'];
-  const isVideo = videoExts.some((e) => url.toLowerCase().includes(e));
+  const isVideo = !isRtsp && videoExts.some((e) => url.toLowerCase().includes(e));
+  const src = isRtsp ? getRtspSrc(url) : url;
 
-  if (!isVideo && !imgErr) {
+  if (err) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={url}
-        alt="Camera feed"
+      <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500">
+        <span className="text-3xl">📷</span>
+        <p className="text-xs text-center px-4">{err}</p>
+        {isRtsp && (
+          <p className="text-[10px] text-center px-4 text-zinc-600">
+            Make sure FFmpeg is installed on the server:<br />
+            <code>sudo apt install ffmpeg</code>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <video
+        src={src}
+        autoPlay
+        muted
+        playsInline
         className="w-full h-full object-cover"
-        onError={() => setImgErr(true)}
+        onError={() => setErr('Failed to load video stream')}
       />
     );
   }
 
+  // RTSP (proxied as MJPEG) or direct MJPEG/image stream
   return (
-    <video
-      src={url}
-      autoPlay
-      muted
-      playsInline
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Camera feed"
       className="w-full h-full object-cover"
-      onError={() => {}}
+      onError={() => setErr(isRtsp ? 'RTSP proxy failed — is FFmpeg installed on the server?' : 'Failed to load stream')}
     />
   );
 }
