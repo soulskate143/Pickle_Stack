@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { loadOpenPlay } from '../../lib/storage';
+import { loadOpenPlay, saveOpenPlay } from '../../lib/storage';
+import { autoAssign, endGame, pickPlayers } from '../../lib/stacking';
 import type { OpenPlaySession } from '../../lib/types';
 
 const ALERT_MINS = 20;
@@ -64,14 +65,45 @@ function gamesLabel(n: number) {
   return { text: `${n} game${n === 1 ? '' : 's'}`, cls: 'text-zinc-500' };
 }
 
+function computeDeck(s: OpenPlaySession) {
+  const pair1 = pickPlayers(s.queue, s.stackingMode) ?? [];
+  const afterPair1 = s.queue.filter((p) => !pair1.some((q) => q.id === p.id));
+  const pair2 = pickPlayers(afterPair1, s.stackingMode) ?? [];
+  return { pair1, pair2 };
+}
+
 export default function OpenPlayTVPage() {
   const now = useNow();
   const [session, setSession] = useState<OpenPlaySession | null>(null);
+  const [deck, setDeck] = useState<{ pair1: ReturnType<typeof pickPlayers>; pair2: ReturnType<typeof pickPlayers> }>({ pair1: [], pair2: [] });
+  const [flashCourt, setFlashCourt] = useState<number | null>(null);
 
   useEffect(() => {
-    setSession(loadOpenPlay());
+    const s = loadOpenPlay();
+    if (s) { setSession(s); setDeck(computeDeck(s)); }
+    // Poll only updates session (timers/courts), not the locked deck
     const id = setInterval(() => setSession(loadOpenPlay()), 5000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      const digit = parseInt(e.key);
+      if (isNaN(digit) || digit < 1) return;
+      const current = loadOpenPlay();
+      if (!current) return;
+      const court = current.courts.find((c) => c.id === digit);
+      if (!court || court.game === null) return;
+      let next = endGame(current, digit, true);
+      next = autoAssign(next);
+      saveOpenPlay(next);
+      setSession(next);
+      setDeck(computeDeck(next)); // recompute deck only on game end
+      setFlashCourt(digit);
+      setTimeout(() => setFlashCourt(null), 800);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
 
@@ -92,14 +124,8 @@ export default function OpenPlayTVPage() {
 
   const activeCourts = session.courts.filter((c) => c.game !== null).length;
   const queueCount = session.queue.length;
-  const sortedQueue = [...session.queue].sort((a, b) => {
-    const ag = a.gamesPlayed ?? 0;
-    const bg = b.gamesPlayed ?? 0;
-    if (ag !== bg) return ag - bg;
-    return a.queuedAt - b.queuedAt;
-  });
-  const nextPair1 = sortedQueue.slice(0, 4);
-  const nextPair2 = sortedQueue.slice(4, 8);
+  const nextPair1 = deck.pair1 ?? [];
+  const nextPair2 = deck.pair2 ?? [];
 
   const courtCount = session.courts.length;
   const grid = getGridConfig(courtCount);
@@ -173,17 +199,20 @@ export default function OpenPlayTVPage() {
               const teamB = players.slice(2, 4);
               const gameMs = playing ? Date.now() - court.game!.startTime : 0;
               const isOvertime = playing && gameMs > ALERT_MINS * 60000;
+              const isFlashing = flashCourt === court.id;
 
               return (
                 <div
                   key={court.id}
                   style={grid.spans[idx] > 1 ? { gridColumn: `span ${grid.spans[idx]}` } : undefined}
-                  className={`rounded-2xl flex flex-col overflow-hidden border-2 ${
-                    playing
-                      ? isOvertime
-                        ? 'border-orange-500 bg-zinc-900'
-                        : 'border-emerald-500 bg-zinc-900'
-                      : 'border-zinc-700 bg-zinc-900/60'
+                  className={`rounded-2xl flex flex-col overflow-hidden border-2 transition-colors duration-150 ${
+                    isFlashing
+                      ? 'border-white bg-white/10'
+                      : playing
+                        ? isOvertime
+                          ? 'border-orange-500 bg-zinc-900'
+                          : 'border-emerald-500 bg-zinc-900'
+                        : 'border-zinc-700 bg-zinc-900/60'
                   }`}
                 >
                   {/* Court header */}
@@ -196,9 +225,16 @@ export default function OpenPlayTVPage() {
                         : 'bg-zinc-800'
                     }`}
                   >
-                    <span className={`font-black ${sz.header} uppercase tracking-[0.2em] text-white`}>
-                      Court {court.id}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`font-black ${sz.header} uppercase tracking-[0.2em] text-white`}>
+                        Court {court.id}
+                      </span>
+                      {playing && court.id <= 9 && (
+                        <span className="text-[10px] font-black bg-white/20 text-white/60 rounded px-1 py-0.5 leading-none">
+                          {court.id}
+                        </span>
+                      )}
+                    </div>
                     {playing && (
                       <span className={`font-mono ${sz.timer} font-bold tabular-nums text-white ${isOvertime ? 'animate-pulse' : ''}`}>
                         ⏱ {elapsed(court.game!.startTime)}{isOvertime ? ' ⚠️' : ''}
