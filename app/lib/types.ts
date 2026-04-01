@@ -47,6 +47,7 @@ export interface OpenPlaySession {
   queue: QueuedPlayer[];
   stackingMode: StackingMode;
   gameDurations: number[]; // ms durations of completed games, for avg wait estimate
+  deckOverride: string[] | null; // locked On Deck player IDs (pair1[0-3] + pair2[4-7])
 }
 
 export interface SessionLog {

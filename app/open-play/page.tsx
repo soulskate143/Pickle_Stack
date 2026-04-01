@@ -631,7 +631,6 @@ export default function OpenPlayPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
-  const [deckOverride, setDeckOverride] = useState<string[] | null>(null);
 
   useEffect(() => {
     setSession(loadOpenPlay());
@@ -672,7 +671,7 @@ export default function OpenPlayPage() {
   const autoPair2 = pickPlayers(afterAutoPair1, session.stackingMode) ?? [];
 
   // Apply manual deck override if set and still valid
-  const validOverride = deckOverride?.filter((id) => session.queue.some((p) => p.id === id)) ?? null;
+  const validOverride = session.deckOverride?.filter((id) => session.queue.some((p) => p.id === id)) ?? null;
   const overrideActive = validOverride !== null && validOverride.length >= 4;
   const pair1: QueuedPlayer[] = overrideActive
     ? validOverride.slice(0, 4).map((id) => session.queue.find((p) => p.id === id)!)
@@ -727,11 +726,9 @@ export default function OpenPlayPage() {
           const courts = next.courts.map((c) =>
             c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
           );
-          next = { ...next, courts, queue };
-          setDeckOverride(buildNextOverride(next, pair2));
+          next = { ...next, courts, queue, deckOverride: buildNextOverride(next, pair2) };
         } else {
-          next = autoAssign(next);
-          setDeckOverride(null);
+          next = { ...autoAssign(next), deckOverride: null };
         }
       } else {
         next = autoAssign(next);
@@ -741,8 +738,7 @@ export default function OpenPlayPage() {
   }
 
   function handleAutoAssign() {
-    setDeckOverride(null);
-    update(autoAssign(session!));
+    update({ ...autoAssign(session!), deckOverride: null });
   }
 
   function handleAssignNext(courtId: number) {
@@ -755,14 +751,11 @@ export default function OpenPlayPage() {
       );
       let next: OpenPlaySession = { ...session!, courts, queue };
       if (autoAssignEnabled) next = autoAssign(next);
-      setDeckOverride(buildNextOverride(next, pair2));
-      update(next);
+      update({ ...next, deckOverride: buildNextOverride(next, pair2) });
     } else {
       let next = assignNextToCourt(session!, courtId);
       if (autoAssignEnabled) next = autoAssign(next);
-      // Lock pair2 as new pair1 so it doesn't change on re-render
-      setDeckOverride(buildNextOverride(next, pair2));
-      update(next);
+      update({ ...next, deckOverride: buildNextOverride(next, pair2) });
     }
   }
 
@@ -802,7 +795,7 @@ export default function OpenPlayPage() {
         // Replacement is from the rest of the queue — just put them in the skipped slot
         newOverride[skippedIdx] = replacementId;
       }
-      setDeckOverride(newOverride);
+      update({ ...session!, deckOverride: newOverride });
       return;
     }
 
@@ -1013,7 +1006,7 @@ export default function OpenPlayPage() {
         queue={sortedQueue}
         onReplace={handleReplacePlayer}
         hasOverride={overrideActive}
-        onClearOverride={() => setDeckOverride(null)}
+        onClearOverride={() => update({ ...session!, deckOverride: null })}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

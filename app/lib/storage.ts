@@ -11,6 +11,7 @@ function defaultOpenPlay(): OpenPlaySession {
     queue: [],
     stackingMode: 'fifo',
     gameDurations: [],
+    deckOverride: null,
   };
 }
 
@@ -19,10 +20,12 @@ export function loadOpenPlay(): OpenPlaySession {
   try {
     const raw = localStorage.getItem(OPEN_PLAY_KEY);
     if (!raw) return defaultOpenPlay();
-    const parsed = JSON.parse(raw) as OpenPlaySession;
-    // migrate old sessions missing gameDurations
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = JSON.parse(raw) as any;
+    // migrate old sessions missing fields
     if (!parsed.gameDurations) parsed.gameDurations = [];
-    return parsed;
+    if (!('deckOverride' in parsed)) parsed.deckOverride = null;
+    return parsed as OpenPlaySession;
   } catch {
     return defaultOpenPlay();
   }

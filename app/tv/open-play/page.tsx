@@ -65,23 +65,21 @@ function gamesLabel(n: number) {
   return { text: `${n} game${n === 1 ? '' : 's'}`, cls: 'text-zinc-500' };
 }
 
-function computeDeck(s: OpenPlaySession) {
+function buildDeckOverride(s: OpenPlaySession): string[] {
   const pair1 = pickPlayers(s.queue, s.stackingMode) ?? [];
   const afterPair1 = s.queue.filter((p) => !pair1.some((q) => q.id === p.id));
   const pair2 = pickPlayers(afterPair1, s.stackingMode) ?? [];
-  return { pair1, pair2 };
+  return [...pair1.map((p) => p.id), ...pair2.map((p) => p.id)];
 }
 
 export default function OpenPlayTVPage() {
   const now = useNow();
   const [session, setSession] = useState<OpenPlaySession | null>(null);
-  const [deck, setDeck] = useState<{ pair1: ReturnType<typeof pickPlayers>; pair2: ReturnType<typeof pickPlayers> }>({ pair1: [], pair2: [] });
   const [flashCourt, setFlashCourt] = useState<number | null>(null);
 
   useEffect(() => {
     const s = loadOpenPlay();
-    if (s) { setSession(s); setDeck(computeDeck(s)); }
-    // Poll only updates session (timers/courts), not the locked deck
+    if (s) setSession(s);
     const id = setInterval(() => setSession(loadOpenPlay()), 5000);
     return () => clearInterval(id);
   }, []);
@@ -96,9 +94,10 @@ export default function OpenPlayTVPage() {
       if (!court || court.game === null) return;
       let next = endGame(current, digit, true);
       next = autoAssign(next);
+      // Recompute and persist locked deck so operator page sees the same On Deck
+      next = { ...next, deckOverride: buildDeckOverride(next) };
       saveOpenPlay(next);
       setSession(next);
-      setDeck(computeDeck(next)); // recompute deck only on game end
       setFlashCourt(digit);
       setTimeout(() => setFlashCourt(null), 800);
     }
@@ -124,8 +123,18 @@ export default function OpenPlayTVPage() {
 
   const activeCourts = session.courts.filter((c) => c.game !== null).length;
   const queueCount = session.queue.length;
-  const nextPair1 = deck.pair1 ?? [];
-  const nextPair2 = deck.pair2 ?? [];
+  // Use session.deckOverride (shared via localStorage) so TV and operator always agree
+  const validOverride = session.deckOverride?.filter((id) => session.queue.some((p) => p.id === id)) ?? null;
+  const autoPair1 = pickPlayers(session.queue, session.stackingMode) ?? [];
+  const afterAutoPair1 = session.queue.filter((p) => !autoPair1.some((q) => q.id === p.id));
+  const autoPair2 = pickPlayers(afterAutoPair1, session.stackingMode) ?? [];
+  const nextPair1 = validOverride && validOverride.length >= 4
+    ? validOverride.slice(0, 4).map((id) => session.queue.find((p) => p.id === id)!).filter(Boolean)
+    : autoPair1;
+  const overridePair2 = validOverride && validOverride.length >= 4
+    ? validOverride.slice(4, 8).map((id) => session.queue.find((p) => p.id === id)!).filter(Boolean)
+    : [];
+  const nextPair2 = overridePair2.length > 0 ? overridePair2 : autoPair2;
 
   const courtCount = session.courts.length;
   const grid = getGridConfig(courtCount);
