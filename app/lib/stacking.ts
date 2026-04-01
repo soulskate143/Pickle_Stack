@@ -22,25 +22,76 @@ export function pickPlayers(queue: QueuedPlayer[], mode: StackingMode): QueuedPl
     const rest = sorted.filter((p) => (p.gamesPlayed ?? 0) !== minGames);
 
     if (minTier.length >= 2 && rest.length >= 2) {
-      // Enough of both tiers — mix 2 lowest + 2 next-in-line
-      return [...minTier.slice(0, 2), ...rest.slice(0, 2)];
+      // Mix 2 lowest-games + 2 most-overdue from rest (already sorted by gamesPlayed→queuedAt)
+      // Cap minTier at 2 so new players always mix with experienced ones.
+      const pick2Min = minTier.slice(0, 2);
+      // From rest, prefer the next tier's longest-waiting players (not just top-2 blindly)
+      const nextMinGames = Math.min(...rest.map((p) => p.gamesPlayed ?? 0));
+      const nextTier = rest.filter((p) => (p.gamesPlayed ?? 0) === nextMinGames);
+      const pick2Rest = nextTier.length >= 2 ? nextTier.slice(0, 2) : rest.slice(0, 2);
+      return [...pick2Min, ...pick2Rest];
     }
 
     return sorted.slice(0, PLAYERS_PER_COURT);
   }
 
-  // Skill-matched: find 4 consecutive (by skill) players with minimal spread
+  // Skill-matched: find 4 consecutive (by skill) players with minimal spread.
+  // Tiebreaker: prefer the window whose longest-waiting player has waited the most.
+  // Starvation: if a player outside the best group has waited 2.5× longer than the
+  // best group's oldest wait AND at least 25 minutes, force them in via their best window.
+  const STALE_MIN_MS = 25 * 60 * 1000;
+  const STALE_MULTIPLIER = 2.5;
+  const now = Date.now();
+
   const sorted = [...queue].sort((a, b) => parseFloat(a.skillLevel) - parseFloat(b.skillLevel));
   let bestGroup: QueuedPlayer[] | null = null;
   let bestSpread = Infinity;
+  let bestOldestWait = 0;
 
   for (let i = 0; i <= sorted.length - PLAYERS_PER_COURT; i++) {
     const group = sorted.slice(i, i + PLAYERS_PER_COURT);
     const spread =
       parseFloat(group[group.length - 1].skillLevel) - parseFloat(group[0].skillLevel);
-    if (spread < bestSpread) {
+    const oldestWait = Math.max(...group.map((p) => now - p.queuedAt));
+
+    if (spread < bestSpread || (spread === bestSpread && oldestWait > bestOldestWait)) {
       bestSpread = spread;
       bestGroup = group;
+      bestOldestWait = oldestWait;
+    }
+  }
+
+  // Starvation check: find anyone outside the best group who has been waiting
+  // significantly longer, and substitute them via their tightest available window.
+  if (bestGroup) {
+    const bestIds = new Set(bestGroup.map((p) => p.id));
+    const stale = queue
+      .filter((p) => !bestIds.has(p.id))
+      .find(
+        (p) =>
+          now - p.queuedAt > STALE_MIN_MS &&
+          now - p.queuedAt > STALE_MULTIPLIER * bestOldestWait,
+      );
+
+    if (stale) {
+      const staleIdx = sorted.findIndex((p) => p.id === stale.id);
+      const winStart = Math.max(0, staleIdx - PLAYERS_PER_COURT + 1);
+      const winEnd = Math.min(sorted.length - PLAYERS_PER_COURT, staleIdx);
+      let staleGroup: QueuedPlayer[] | null = null;
+      let staleBest = Infinity;
+
+      for (let i = winStart; i <= winEnd; i++) {
+        const group = sorted.slice(i, i + PLAYERS_PER_COURT);
+        if (!group.some((p) => p.id === stale.id)) continue;
+        const spread =
+          parseFloat(group[group.length - 1].skillLevel) - parseFloat(group[0].skillLevel);
+        if (spread < staleBest) {
+          staleBest = spread;
+          staleGroup = group;
+        }
+      }
+
+      if (staleGroup) return staleGroup;
     }
   }
 

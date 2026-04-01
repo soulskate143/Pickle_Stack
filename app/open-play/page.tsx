@@ -677,9 +677,10 @@ export default function OpenPlayPage() {
   const pair1: QueuedPlayer[] = overrideActive
     ? validOverride.slice(0, 4).map((id) => session.queue.find((p) => p.id === id)!)
     : autoPair1;
-  const pair2: QueuedPlayer[] = overrideActive
+  const overridePair2 = overrideActive
     ? validOverride.slice(4, 8).map((id) => session.queue.find((p) => p.id === id)!).filter(Boolean)
-    : autoPair2;
+    : [];
+  const pair2: QueuedPlayer[] = overridePair2.length > 0 ? overridePair2 : autoPair2;
 
   const pair1Ids = new Set(pair1.map((p) => p.id));
   const pair2Ids = new Set(pair2.map((p) => p.id));
@@ -705,11 +706,20 @@ export default function OpenPlayPage() {
     update({ ...session!, queue: session!.queue.filter((p) => p.id !== id) });
   }
 
+  // Build a locked 8-ID override: currentPair2 → new pair1, auto-pick new pair2
+  function buildNextOverride(nextSession: OpenPlaySession, currentPair2: QueuedPlayer[]): string[] | null {
+    const newPair1 = currentPair2.filter((p) => nextSession.queue.some((q) => q.id === p.id));
+    if (newPair1.length < 4) return null;
+    const newPair1Ids = new Set(newPair1.map((p) => p.id));
+    const afterPair1 = nextSession.queue.filter((p) => !newPair1Ids.has(p.id));
+    const newPair2 = pickPlayers(afterPair1, nextSession.stackingMode) ?? [];
+    return [...newPair1.map((p) => p.id), ...newPair2.map((p) => p.id)];
+  }
+
   function handleEndGame(courtId: number, requeue: boolean) {
     let next = endGame(session!, courtId, requeue);
     if (autoAssignEnabled) {
       if (overrideActive && pair1.length === 4) {
-        // Respect the manual deck override — assign override pair1 to the freed court
         const players = pair1.filter((p) => next.queue.some((q) => q.id === p.id));
         if (players.length === 4) {
           const pickedIds = new Set(players.map((p) => p.id));
@@ -717,11 +727,9 @@ export default function OpenPlayPage() {
           const courts = next.courts.map((c) =>
             c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
           );
-          const remaining = (validOverride ?? []).slice(4);
-          setDeckOverride(remaining.length >= 4 ? remaining : null);
           next = { ...next, courts, queue };
+          setDeckOverride(buildNextOverride(next, pair2));
         } else {
-          // Override players no longer available, fall back to auto
           next = autoAssign(next);
           setDeckOverride(null);
         }
@@ -745,14 +753,15 @@ export default function OpenPlayPage() {
       const courts = session!.courts.map((c) =>
         c.id === courtId ? { ...c, game: { players, startTime: Date.now() } } : c
       );
-      const remaining = validOverride!.slice(4);
-      setDeckOverride(remaining.length >= 4 ? remaining : null);
       let next: OpenPlaySession = { ...session!, courts, queue };
       if (autoAssignEnabled) next = autoAssign(next);
+      setDeckOverride(buildNextOverride(next, pair2));
       update(next);
     } else {
       let next = assignNextToCourt(session!, courtId);
       if (autoAssignEnabled) next = autoAssign(next);
+      // Lock pair2 as new pair1 so it doesn't change on re-render
+      setDeckOverride(buildNextOverride(next, pair2));
       update(next);
     }
   }
