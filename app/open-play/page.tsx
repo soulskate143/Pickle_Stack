@@ -217,18 +217,23 @@ function OnDeckPanel({
   onClearOverride: () => void;
 }) {
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   if (queue.length === 0) return null;
 
   const pair1 = queue.slice(0, 4);
   const pair2 = queue.slice(4, 8);
   const replacingPlayer = queue.find((p) => p.id === replacingId) ?? null;
-  const replacementOptions = queue.filter((p) => p.id !== replacingId);
+  const allOptions = queue.filter((p) => p.id !== replacingId);
+  const replacementOptions = search.trim()
+    ? allOptions.filter((p) => p.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : allOptions;
 
   function handleReplace(withId: string | 'auto') {
     if (!replacingId) return;
     onReplace(replacingId, withId);
     setReplacingId(null);
+    setSearch('');
   }
 
   function PlayerPill({ player, index, bgClass, textClass }: {
@@ -310,14 +315,32 @@ function OnDeckPanel({
           <p className="text-xs font-semibold text-pb-text/70 mb-2">
             Replace <span className="text-red-500">{replacingPlayer.name}</span> with:
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2 mb-2">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search player…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-pb-border bg-pb-bg text-pb-text placeholder:text-pb-text/30 focus:outline-none focus:border-pb-green"
+            />
             <button
-              onClick={() => handleReplace('auto')}
-              className="flex items-center gap-1.5 bg-pb-green text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-pb-green/80 transition-colors"
+              onClick={() => { setReplacingId(null); setSearch(''); }}
+              className="text-xs text-pb-text/40 hover:text-pb-text px-2 py-1.5 transition-colors"
             >
-              ⚡ Auto — next in line
-              {replacementOptions[0] && <span className="opacity-70">({replacementOptions[0].name})</span>}
+              Cancel
             </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {!search && (
+              <button
+                onClick={() => handleReplace('auto')}
+                className="flex items-center gap-1.5 bg-pb-green text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-pb-green/80 transition-colors"
+              >
+                ⚡ Auto — next in line
+                {allOptions[0] && <span className="opacity-70">({allOptions[0].name})</span>}
+              </button>
+            )}
             {replacementOptions.map((p, i) => (
               <button
                 key={p.id}
@@ -326,23 +349,12 @@ function OnDeckPanel({
               >
                 <span className="text-pb-text/40">#{i + 1}</span>
                 {p.name}
-                <span className="text-pb-text/40 ml-0.5">{p.skillLevel}</span>
+                <span className="text-pb-text/40 ml-0.5">{p.gamesPlayed ?? 0}g · {p.skillLevel}</span>
               </button>
             ))}
             {replacementOptions.length === 0 && (
-              <button
-                onClick={() => handleReplace('auto')}
-                className="bg-pb-text/10 text-pb-text text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-pb-text/20 transition-colors"
-              >
-                Skip to end of queue
-              </button>
+              <span className="text-xs text-pb-text/40 italic">No players match</span>
             )}
-            <button
-              onClick={() => setReplacingId(null)}
-              className="text-xs text-pb-text/40 hover:text-pb-text px-2 py-1.5 transition-colors"
-            >
-              Cancel
-            </button>
           </div>
         </div>
       )}
@@ -702,7 +714,17 @@ export default function OpenPlayPage() {
   }
 
   function handleRemovePlayer(id: string) {
-    update({ ...session!, queue: session!.queue.filter((p) => p.id !== id) });
+    const newOverride = session!.deckOverride
+      ? session!.deckOverride.filter((did) => did !== id)
+      : null;
+    const validNewOverride = newOverride && newOverride.filter((did) => session!.queue.some((p) => p.id === did && p.id !== id)).length >= 4
+      ? newOverride
+      : null;
+    update({
+      ...session!,
+      queue: session!.queue.filter((p) => p.id !== id),
+      deckOverride: validNewOverride,
+    });
   }
 
   // Build a locked 8-ID override: currentPair2 → new pair1, auto-pick new pair2
@@ -1040,7 +1062,11 @@ export default function OpenPlayPage() {
               Queue ({session.queue.length})
             </h2>
             <QueueList
-              queue={sortedQueue}
+              queue={[...session.queue].sort((a, b) => {
+                const ag = a.gamesPlayed ?? 0, bg = b.gamesPlayed ?? 0;
+                if (ag !== bg) return ag - bg;
+                return a.queuedAt - b.queuedAt;
+              })}
               onRemove={handleRemovePlayer}
               courts={session.courts}
               courtCount={session.courtCount}
