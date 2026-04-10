@@ -116,7 +116,7 @@ function ScaledBracket({
   phaseFilter?: 'playoff';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(0);
 
   const allMatches = phaseFilter
     ? tournament.matches.filter((m) => m.phase === phaseFilter)
@@ -170,7 +170,7 @@ function ScaledBracket({
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
       const pad = 64;
-      setScale(Math.min((width - pad) / totalW, (height - pad) / totalH));
+      setScale(Math.min(1, (width - pad) / totalW, (height - pad) / totalH));
     }
     compute();
     window.addEventListener('resize', compute);
